@@ -1,0 +1,135 @@
+<!doctype html>
+<!-- The README banner. Rendered to banner.png by `npm run banner`. -->
+<meta charset="utf-8" />
+<style>
+  @font-face {
+    font-family: Inter;
+    src: url('../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2')
+      format('woff2');
+    font-weight: 100 900;
+  }
+  html,
+  body {
+    margin: 0;
+    width: 1920px;
+    height: 1200px;
+    overflow: hidden;
+    background: #05070d;
+    font-family: Inter, sans-serif;
+    color: #fff;
+  }
+  .glow {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(
+        900px 620px at 14% 12%,
+        rgb(47 91 234 / 0.72),
+        transparent 70%
+      ),
+      radial-gradient(
+        820px 560px at 88% 20%,
+        rgb(16 170 214 / 0.5),
+        transparent 72%
+      ),
+      radial-gradient(
+        1300px 620px at 50% 104%,
+        rgb(90 112 255 / 0.62),
+        transparent 72%
+      );
+  }
+  .wave {
+    position: absolute;
+    left: -80px;
+    top: -210px;
+    width: 2080px;
+    height: 2080px;
+    opacity: 0.05;
+  }
+  header {
+    position: absolute;
+    top: 58px;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 36px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  h1 {
+    margin: 26px 0 0;
+    font-size: 104px;
+    line-height: 1.04;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+  }
+  h1 span {
+    color: #a9b8ff;
+  }
+  p {
+    margin: 20px 0 0;
+    font-size: 30px;
+    letter-spacing: -0.01em;
+    color: rgb(255 255 255 / 0.74);
+  }
+  .window {
+    position: absolute;
+    left: 220px;
+    top: 368px;
+    width: 1480px;
+    height: 832px;
+    border-radius: 20px 20px 0 0;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.16),
+      0 -30px 120px rgb(30 60 220 / 0.55);
+  }
+  .window img {
+    display: block;
+    width: 1480px;
+    height: 832px;
+  }
+</style>
+<div class="glow"></div>
+<svg
+  class="wave"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="#fff"
+  stroke-width="1.1"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path
+    d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2"
+  />
+</svg>
+<header>
+  <div class="brand">
+    <svg
+      width="44"
+      height="44"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#fff"
+      stroke-width="2.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2"
+      />
+    </svg>
+    wavebit
+  </div>
+  <h1>All your music. <span>One player.</span></h1>
+  <p>Your files, Spotify and YouTube Music. Free and open source.</p>
+</header>
+<div class="window"><img src="../../docs/images/wavebit.png" alt="" /></div>

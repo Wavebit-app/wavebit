@@ -4,7 +4,7 @@
   "desktopName": "wavebit.desktop",
   "version": "1.0.0",
   "private": true,
-  "description": "Your music files, your Spotify library and YouTube Music in one desktop player",
+  "description": "All your music in one open-source player: your files, Spotify and YouTube Music.",
   "keywords": [
     "electron",
     "music-player",
@@ -31,6 +31,7 @@
     "test:js": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"src/**/*.test.ts\"",
     "test:scripts": "node --test \"scripts/*.test.mjs\"",
     "icons": "node scripts/build-icons.mjs",
+    "banner": "electron scripts/build-banner.cjs",
     "prestart": "npm run tools:fetch && npm run native:build",
     "start": "electron-forge start",
     "prepackage": "npm run tools:fetch && npm run native:build",
