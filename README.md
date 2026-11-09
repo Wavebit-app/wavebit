@@ -1,16 +1,24 @@
 <div align="center">
 
-<img src="assets/brand/icon.png" width="168" alt="wavebit logo">
+<img src="assets/brand/icon.png" width="150" alt="wavebit logo">
 
 # wavebit
 
-Your music files, your Spotify library and YouTube Music in one desktop player.
+### All your music in one open-source player
 
-[![Release](https://img.shields.io/github/v/release/Wavebit-app/wavebit?color=2f5bea)](https://github.com/Wavebit-app/wavebit/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/Wavebit-app/wavebit/release.yml?label=release)](https://github.com/Wavebit-app/wavebit/actions/workflows/release.yml)
-[![License](https://img.shields.io/github/license/Wavebit-app/wavebit?color=2f5bea)](LICENSE)
+Your files, your Spotify library and YouTube Music, side by side.
 
-<img src="docs/images/wavebit.png" alt="wavebit playing a song">
+<br>
+
+[![Latest release](https://img.shields.io/github/v/release/Wavebit-app/wavebit?style=for-the-badge&labelColor=0d1117&color=2f5bea)](https://github.com/Wavebit-app/wavebit/releases/latest)
+[![Build](https://img.shields.io/github/actions/workflow/status/Wavebit-app/wavebit/release.yml?style=for-the-badge&labelColor=0d1117&label=build)](https://github.com/Wavebit-app/wavebit/actions/workflows/release.yml)
+[![License](https://img.shields.io/github/license/Wavebit-app/wavebit?style=for-the-badge&labelColor=0d1117&color=2f5bea)](LICENSE)
+
+[**Download**](#download) · [**Build it yourself**](#build-it-yourself) · [**Contribute**](CONTRIBUTING.md)
+
+<br>
+
+<img src="assets/brand/banner.png" width="100%" alt="wavebit playing a song, under the words All your music. One player.">
 
 </div>
 

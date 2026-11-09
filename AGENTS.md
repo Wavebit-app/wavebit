@@ -39,6 +39,7 @@ Desktop app: Electron Forge (Vite) + React 19 + TypeScript, HeroUI v3 on Tailwin
 - `npm run native:build` rebuilds only the Rust module.
 - `npm run tools:fetch` puts the pinned yt-dlp and Deno in `tools/`, checked by SHA-256 (runs before start, package and make). `npm run tools:update` pins the newest releases; do this and rebuild when YouTube breaks downloads.
 - `npm run icons` re-renders the desktop icons (`icon.png`, `icon.ico`, `icon.icns`, `icons/`) from `logo-mark.svg`.
+- `npm run banner` re-renders the README banner (`assets/brand/banner.png`) from `banner.html`.
 - `WAVEBIT_USER_DATA=/some/dir npm start` runs against a throwaway profile (dev builds only).
 
 ## Rules
