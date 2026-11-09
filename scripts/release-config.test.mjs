@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 const read = (file) =>
   readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
@@ -38,4 +40,25 @@ test('updates publish to the repository the app reads its notes from', () => {
 test('the Windows installer stays one-click and reopens the app', () => {
   assert.match(builder, /^ {2}oneClick: true$/m);
   assert.match(builder, /^ {2}runAfterFinish: true$/m);
+});
+
+test('no two source files differ only by letter case', () => {
+  // Windows and macOS disks can't tell them apart, so imports resolve wrongly.
+  const walk = (dir) =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory()
+        ? walk(path.join(dir, entry.name))
+        : [path.join(dir, entry.name)],
+    );
+  const stems = new Map();
+  for (const file of walk(fileURLToPath(new URL('../src', import.meta.url)))) {
+    const dir = path.dirname(file);
+    const stem = path.basename(file).split('.')[0];
+    const key = `${dir}/${stem}`.toLowerCase();
+    assert.ok(
+      !stems.has(key) || stems.get(key) === stem,
+      `${file} collides with ${stems.get(key)}`,
+    );
+    stems.set(key, stem);
+  }
 });

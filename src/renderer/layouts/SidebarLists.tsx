@@ -20,7 +20,7 @@ import {
   useSettings,
   useSignedIn,
 } from '../lib/queries';
-import { recentArtists, recentSongs, type RecentArtist } from './sidebarLists';
+import { recentArtists, recentSongs, type RecentArtist } from './sidebarListRules';
 
 const PAGE = { playlists: 6, songs: 8, artists: 6 };
 

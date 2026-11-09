@@ -4,7 +4,7 @@ import {
   shownProgress,
   waveAmplitude,
   wavePath,
-} from './waveRing';
+} from './waveRingPath';
 
 /**
  * A wavy progress ring. The wave turns with CSS alone, under a mask that stays

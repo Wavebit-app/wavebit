@@ -5,7 +5,7 @@ import {
   shownProgress,
   waveAmplitude,
   wavePath,
-} from './waveRing.ts';
+} from './waveRingPath.ts';
 
 test('the wave is flat at both ends and full in the middle', () => {
   assert.equal(waveAmplitude(0), 0);

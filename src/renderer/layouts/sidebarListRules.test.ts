@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Playable } from '../features/player/player';
-import { recentArtists, recentSongs } from './sidebarLists.ts';
+import { recentArtists, recentSongs } from './sidebarListRules.ts';
 
 const song = (id: string, artist: string, stream = true): Playable => ({
   id,
