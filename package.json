@@ -12,7 +12,7 @@
     "spotify",
     "youtube-music"
   ],
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "homepage": "https://github.com/Wavebit-app/wavebit",
   "repository": {
     "type": "git",

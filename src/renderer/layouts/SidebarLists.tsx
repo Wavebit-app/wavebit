@@ -1,4 +1,11 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { Tooltip } from '@heroui/react';
+import { ChevronDown } from 'lucide-react';
+import {
+  useMemo,
+  useState,
+  type MouseEventHandler,
+  type ReactNode,
+} from 'react';
 import { primaryArtist } from '../../shared/lrc';
 import { nav, useNav, type Route } from '../app/router';
 import { Artwork } from '../design/Artwork';
@@ -27,8 +34,17 @@ import {
 } from './sidebarListRules';
 
 const PAGE = { playlists: 6, songs: 8, artists: 6 };
+/** DESIGN.md › Sidebar: large enough to tell one cover from another. */
+const ART = { playlist: 36, song: 44, artist: 40, rail: 48 };
 
-function Heading({ children }: { children: string }) {
+function Heading({ rail, children }: { rail: boolean; children: string }) {
+  // The rail has no words to spare: a gap separates the groups.
+  if (rail)
+    return (
+      <h2 className="h-3 shrink-0 first:h-2">
+        <span className="sr-only">{children}</span>
+      </h2>
+    );
   return (
     <h2 className="mx-3 mt-6 mb-2 shrink-0 text-[0.8667rem] font-semibold text-muted first:mt-5">
       {children}
@@ -40,30 +56,95 @@ function Heading({ children }: { children: string }) {
 function Paged<T>({
   items,
   page,
+  rail,
   children,
 }: {
   items: T[];
   page: number;
+  rail: boolean;
   children: (item: T, index: number) => ReactNode;
 }) {
   const [shown, setShown] = useState(page);
+  const more = () => setShown(shown + page);
   return (
     <>
       {items.slice(0, shown).map(children)}
-      {items.length > shown && (
-        <button
-          type="button"
-          onClick={() => setShown(shown + page)}
-          className="no-drag h-8 shrink-0 rounded-md px-3 text-left text-[0.8667rem] font-medium text-muted hover:bg-sunken hover:text-foreground"
-        >
-          Show more
-        </button>
-      )}
+      {items.length > shown &&
+        (rail ? (
+          <Tooltip delay={300}>
+            <Tooltip.Trigger>
+              <button
+                type="button"
+                aria-label="Show more"
+                onClick={more}
+                className="no-drag flex h-8 w-12 shrink-0 items-center justify-center rounded-md text-muted hover:bg-sunken hover:text-foreground"
+              >
+                <ChevronDown size={18} aria-hidden />
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Content placement="right">Show more</Tooltip.Content>
+          </Tooltip>
+        ) : (
+          <button
+            type="button"
+            onClick={more}
+            className="no-drag h-8 shrink-0 rounded-md px-3 text-left text-[0.8667rem] font-medium text-muted hover:bg-sunken hover:text-foreground"
+          >
+            Show more
+          </button>
+        ))}
     </>
   );
 }
 
-function Playlists() {
+/** One picture in the folded sidebar: its name is the tooltip. */
+function RailArt({
+  label,
+  name,
+  active = false,
+  playing,
+  onPress,
+  onContextMenu,
+  children,
+}: {
+  /** What a press does, for screen readers. */
+  label: string;
+  /** What it is, for the tooltip. */
+  name: string;
+  active?: boolean;
+  /** Set while this is what's playing. */
+  playing?: { paused: boolean };
+  onPress: () => void;
+  onContextMenu?: MouseEventHandler<HTMLElement>;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip delay={300}>
+      <Tooltip.Trigger>
+        <button
+          type="button"
+          aria-label={label}
+          aria-current={active ? 'page' : undefined}
+          onClick={onPress}
+          onContextMenu={onContextMenu}
+          className={`no-drag relative grid size-14 shrink-0 place-items-center rounded-md ${
+            active ? 'bg-accent-soft' : 'hover:bg-sunken'
+          }`}
+        >
+          {children}
+          {playing && (
+            <span className="absolute inset-1 grid place-items-center rounded-md bg-black/50">
+              <PlayingBars paused={playing.paused} className="text-white" />
+            </span>
+          )}
+        </button>
+      </Tooltip.Trigger>
+      <Tooltip.Content placement="right">{name}</Tooltip.Content>
+    </Tooltip>
+  );
+}
+
+function Playlists({ rail }: { rail: boolean }) {
   const { route } = useNav();
   const show = useSettings().data?.showPlaylists ?? false;
   const signedIn = useSignedIn();
@@ -74,26 +155,47 @@ function Playlists() {
   if (!signedIn || !show || playlists.length === 0) return null;
   return (
     <>
-      <Heading>Playlists</Heading>
-      <Paged items={playlists} page={PAGE.playlists}>
+      <Heading rail={rail}>Playlists</Heading>
+      <Paged items={playlists} page={PAGE.playlists} rail={rail}>
         {(p) => {
           const active = route.name === 'playlist' && route.id === p.id;
+          const open = () => nav.go({ name: 'playlist', id: p.id });
+          const menu = menuOn(() =>
+            spotifyPlaylistMenu(p, () => removing.mutate(p.id)),
+          );
+          if (rail)
+            return (
+              <RailArt
+                key={p.id}
+                label={`Open ${p.name}`}
+                name={p.name}
+                active={active}
+                playing={source === p.name ? { paused } : undefined}
+                onPress={open}
+                onContextMenu={menu}
+              >
+                <PlaylistCover
+                  id={p.id}
+                  src={p.imageUrl}
+                  size={ART.rail}
+                  rounded="rounded-md"
+                />
+              </RailArt>
+            );
           return (
             <button
               key={p.id}
               type="button"
               aria-current={active ? 'page' : undefined}
-              onClick={() => nav.go({ name: 'playlist', id: p.id })}
-              onContextMenu={menuOn(() =>
-                spotifyPlaylistMenu(p, () => removing.mutate(p.id)),
-              )}
-              className={`no-drag flex h-9 shrink-0 items-center gap-2.5 rounded-md px-3 text-left text-sm ${
+              onClick={open}
+              onContextMenu={menu}
+              className={`no-drag flex h-12 shrink-0 items-center gap-2.5 rounded-md px-3 text-left text-sm ${
                 active
                   ? 'bg-accent-soft font-semibold text-accent'
                   : 'hover:bg-sunken'
               }`}
             >
-              <PlaylistCover id={p.id} src={p.imageUrl} size={24} />
+              <PlaylistCover id={p.id} src={p.imageUrl} size={ART.playlist} />
               <span className="min-w-0 flex-1 truncate">{p.name}</span>
               {source === p.name && <PlayingBars paused={paused} />}
             </button>
@@ -108,23 +210,44 @@ function SongRow({
   song,
   current,
   paused,
+  rail,
   onPress,
 }: {
   song: Playable;
   current: boolean;
   paused: boolean;
+  rail: boolean;
   onPress: () => void;
 }) {
+  const label = current ? `${song.title}, now playing` : `Play ${song.title}`;
+  const menu = menuOn(() => songMenu(song));
+  if (rail)
+    return (
+      <RailArt
+        label={label}
+        name={`${song.title} · ${song.artist}`}
+        playing={current ? { paused } : undefined}
+        onPress={onPress}
+        onContextMenu={menu}
+      >
+        <Artwork
+          key={song.artwork}
+          src={song.artwork}
+          size={ART.rail}
+          rounded="rounded-md"
+        />
+      </RailArt>
+    );
   return (
     <button
       type="button"
       onClick={onPress}
-      onContextMenu={menuOn(() => songMenu(song))}
-      aria-label={current ? `${song.title}, now playing` : `Play ${song.title}`}
-      className="no-drag flex h-11 shrink-0 items-center gap-2.5 rounded-md px-3 text-left hover:bg-sunken"
+      onContextMenu={menu}
+      aria-label={label}
+      className="no-drag flex h-14 shrink-0 items-center gap-2.5 rounded-md px-3 text-left hover:bg-sunken"
     >
-      <Artwork key={song.artwork} src={song.artwork} size={32} />
-      <span className="flex min-w-0 flex-1 flex-col">
+      <Artwork key={song.artwork} src={song.artwork} size={ART.song} />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span
           className={`truncate text-sm leading-tight ${current ? 'font-semibold text-accent' : 'font-medium'}`}
         >
@@ -143,10 +266,12 @@ function ArtistRow({
   artist,
   current,
   paused,
+  rail,
 }: {
   artist: RecentArtist;
   current: boolean;
   paused: boolean;
+  rail: boolean;
 }) {
   const { route } = useNav();
   // A file's artist stays private: their name is only asked about for streams.
@@ -161,16 +286,38 @@ function ArtistRow({
   const active =
     (route.name === 'ytArtist' && route.id === profile?.browseId) ||
     (route.name === 'artist' && route.artist === artist.credit);
+  if (rail)
+    return (
+      <RailArt
+        label={`Open ${artist.name}`}
+        name={artist.name}
+        active={active}
+        playing={current ? { paused } : undefined}
+        onPress={() => nav.go(target)}
+      >
+        <Artwork
+          key={picture}
+          src={picture}
+          size={ART.rail}
+          rounded="rounded-full"
+        />
+      </RailArt>
+    );
   return (
     <button
       type="button"
       aria-current={active ? 'page' : undefined}
       onClick={() => nav.go(target)}
-      className={`no-drag flex h-9 shrink-0 items-center gap-2.5 rounded-md px-3 text-left text-sm ${
+      className={`no-drag flex h-13 shrink-0 items-center gap-2.5 rounded-md px-3 text-left text-sm ${
         active ? 'bg-accent-soft font-semibold text-accent' : 'hover:bg-sunken'
       }`}
     >
-      <Artwork key={picture} src={picture} size={28} rounded="rounded-full" />
+      <Artwork
+        key={picture}
+        src={picture}
+        size={ART.artist}
+        rounded="rounded-full"
+      />
       <span className="min-w-0 flex-1 truncate">{artist.name}</span>
       {current && <PlayingBars paused={paused} />}
     </button>
@@ -180,9 +327,10 @@ function ArtistRow({
 /**
  * DESIGN.md › Sidebar: one scrolling list under the main links, as BitChord's
  * web sidebar has it: Playlists, Recently played and Artists, each paged with
- * Show more. Bars mark whatever is playing.
+ * Show more. Bars mark whatever is playing. Folded to the rail, the same lists
+ * stay as pictures.
  */
-export function SidebarLists() {
+export function SidebarLists({ rail }: { rail: boolean }) {
   const history = usePlayHistory().data;
   const current = usePlayer((s) => s.queue[s.index]);
   const paused = usePlayer((s) => !s.playing);
@@ -195,12 +343,18 @@ export function SidebarLists() {
     ? primaryArtist(current.artist).trim().toLowerCase()
     : '';
   return (
-    <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
-      <Playlists />
+    <div
+      className={
+        rail
+          ? 'no-scrollbar mt-2 flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto'
+          : '-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1'
+      }
+    >
+      <Playlists rail={rail} />
       {songs.length > 0 && (
         <>
-          <Heading>Recently played</Heading>
-          <Paged items={songs} page={PAGE.songs}>
+          <Heading rail={rail}>Recently played</Heading>
+          <Paged items={songs} page={PAGE.songs} rail={rail}>
             {(song, i) => {
               const isCurrent = song.id === current?.id;
               return (
@@ -209,6 +363,7 @@ export function SidebarLists() {
                   song={song}
                   current={isCurrent}
                   paused={paused}
+                  rail={rail}
                   onPress={() =>
                     isCurrent
                       ? player.toggle()
@@ -222,14 +377,15 @@ export function SidebarLists() {
       )}
       {artists.length > 0 && (
         <>
-          <Heading>Artists</Heading>
-          <Paged items={artists} page={PAGE.artists}>
+          <Heading rail={rail}>Artists</Heading>
+          <Paged items={artists} page={PAGE.artists} rail={rail}>
             {(artist) => (
               <ArtistRow
                 key={artist.name}
                 artist={artist}
                 current={artist.name.toLowerCase() === playingArtist}
                 paused={paused}
+                rail={rail}
               />
             )}
           </Paged>
