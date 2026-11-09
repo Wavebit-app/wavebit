@@ -1,0 +1,12 @@
+{
+  "singleQuote": true,
+  "printWidth": 80,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "native/index.d.ts",
+    "native/target/**",
+    "docs/llms/**",
+    ".claude/**",
+    ".agents/**"
+  ]
+}

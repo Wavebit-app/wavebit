@@ -1,0 +1,316 @@
+/*
+ * wavebit tokens (DESIGN.md › Palette). Sets HeroUI's variables to the owner's
+ * hex values. Layer `base` comes after HeroUI's `theme` layer, so these win.
+ * Tailwind v4 has no config file: the @theme block below is the Tailwind config.
+ */
+@layer base {
+  :root,
+  .light,
+  [data-theme='light'] {
+    color-scheme: light;
+    --canvas: #eef0f3;
+    --sunken: #f5f6f8;
+    --raised: #ffffff;
+    --line: #dde1e7;
+    --line-strong: #c6ccd5;
+    --faint: #8a919c;
+    --record: #d93a2b;
+
+    --background: var(--canvas);
+    --foreground: #14161a;
+    --surface: #ffffff;
+    --surface-foreground: var(--foreground);
+    --surface-secondary: var(--sunken);
+    --surface-secondary-foreground: var(--foreground);
+    --surface-tertiary: var(--sunken);
+    --surface-tertiary-foreground: var(--foreground);
+    --surface-hover: var(--sunken);
+    --surface-shadow: 0 0 0 0 transparent;
+    --overlay: var(--raised);
+    --overlay-foreground: var(--foreground);
+    --overlay-shadow:
+      0 8px 24px rgb(20 22 26 / 0.12), 0 2px 6px rgb(20 22 26 / 0.08);
+    --muted: #5b6270;
+    --default: var(--sunken);
+    --default-foreground: var(--foreground);
+    --default-hover: #eceef2;
+    --segment: var(--surface);
+    --segment-foreground: var(--foreground);
+
+    --accent: #2f5bea;
+    --accent-hover: #2549c4;
+    --accent-soft: #e6ecfd;
+    --accent-soft-hover: #dbe3fc;
+    --accent-soft-foreground: var(--accent);
+    --accent-foreground: #ffffff;
+    --focus: var(--accent);
+    --link: var(--accent);
+
+    --success: #1f8a4c;
+    --success-foreground: #ffffff;
+    --success-soft: #e3f3ea;
+    --success-soft-foreground: var(--foreground);
+    --warning: #a86a12;
+    --warning-foreground: #ffffff;
+    --warning-soft: #fbf0dc;
+    --warning-soft-foreground: var(--foreground);
+    --danger: #c4322b;
+    --danger-hover: #ab2a24;
+    --danger-foreground: #ffffff;
+    --danger-soft: #fbe6e5;
+    --danger-soft-foreground: var(--danger);
+
+    --field-background: var(--sunken);
+    --field-foreground: var(--foreground);
+    --field-placeholder: var(--muted);
+    --field-border: var(--line);
+    --field-border-hover: var(--line-strong);
+    --field-border-focus: var(--accent);
+    --field-border-width: 1px;
+    --field-shadow: 0 0 0 0 transparent inset;
+
+    /* No dividers (DESIGN.md › Principles). */
+    --border: transparent;
+    --border-secondary: transparent;
+    --border-tertiary: transparent;
+    --separator: transparent;
+    --separator-secondary: transparent;
+    --separator-tertiary: transparent;
+
+    --backdrop: rgb(20 22 26 / 0.48);
+    --radius: 6px;
+    --field-radius: 6px;
+  }
+
+  .dark,
+  [data-theme='dark'] {
+    color-scheme: dark;
+    --canvas: #0b0b0d;
+    --sunken: #0f1012;
+    --raised: #1d1e23;
+    --line: #222327;
+    --line-strong: #32343a;
+    --faint: #7e838f;
+    --record: #ff6f64;
+
+    --foreground: #f1f1f3;
+    --surface: #131316;
+    --muted: #a8adb7;
+    --default-hover: #18191c;
+    --overlay-shadow: 0 8px 24px rgb(0 0 0 / 0.5), 0 0 0 1px #32343a inset;
+
+    --accent: #7f95ff;
+    --accent-hover: #98a9ff;
+    --accent-soft: #1f2540;
+    --accent-soft-hover: #262d4d;
+    --accent-foreground: #0d1020;
+
+    --success: #4fce87;
+    --success-foreground: #0d1020;
+    --success-soft: #143022;
+    --warning: #e7b45a;
+    --warning-foreground: #0d1020;
+    --warning-soft: #32260f;
+    --danger: #ff6f64;
+    --danger-hover: #ff8a80;
+    --danger-foreground: #0d1020;
+    --danger-soft: #3a1d1b;
+
+    --backdrop: rgb(0 0 0 / 0.6);
+  }
+
+  /* Accent tones (DESIGN.md › Accent tones). */
+  [data-accent='violet'] {
+    --accent: #6148d8;
+    --accent-hover: #5038b8;
+    --accent-soft: #ece8ff;
+    --accent-soft-hover: #e2dcff;
+    --accent-foreground: #ffffff;
+  }
+  [data-accent='green'] {
+    --accent: #1f8a4c;
+    --accent-hover: #267b47;
+    --accent-soft: #e3f3ea;
+    --accent-soft-hover: #d6eedf;
+    --accent-foreground: #ffffff;
+  }
+  [data-accent='amber'] {
+    --accent: #ba7400;
+    --accent-hover: #9f6600;
+    --accent-soft: #f7edda;
+    --accent-soft-hover: #f2e3c6;
+    --accent-foreground: #241603;
+    /* Amber is never a text colour in light (DESIGN.md › Contrast). */
+    --accent-soft-foreground: var(--foreground);
+    --link: var(--foreground);
+  }
+  [data-accent='rose'] {
+    --accent: #c14574;
+    --accent-hover: #a73b64;
+    --accent-soft: #f9e7ee;
+    --accent-soft-hover: #f4dae4;
+    --accent-foreground: #ffffff;
+  }
+  [data-theme='dark'][data-accent='violet'] {
+    --accent: #a28fff;
+    --accent-hover: #b7a8ff;
+    --accent-soft: #30254b;
+    --accent-soft-hover: #382c57;
+    --accent-foreground: #0f0820;
+  }
+  [data-theme='dark'][data-accent='green'] {
+    --accent: #4fce87;
+    --accent-hover: #6fdaa0;
+    --accent-soft: #153025;
+    --accent-soft-hover: #1a3a2d;
+    --accent-foreground: #081d12;
+  }
+  [data-theme='dark'][data-accent='amber'] {
+    --accent: #e7b45a;
+    --accent-hover: #efc680;
+    --accent-soft: #38280f;
+    --accent-soft-hover: #423013;
+    --accent-foreground: #241603;
+    --accent-soft-foreground: var(--accent);
+    --link: var(--accent);
+  }
+  [data-theme='dark'][data-accent='rose'] {
+    --accent: #ff83ad;
+    --accent-hover: #ff9fc0;
+    --accent-soft: #3c1d2b;
+    --accent-soft-hover: #462233;
+    --accent-foreground: #260d17;
+  }
+
+  /* Dark themes with their own surfaces (DESIGN.md › Themes). */
+  [data-palette='black'] {
+    --canvas: #000000;
+    --sunken: #080808;
+    --raised: #161616;
+    --line: #1a1a1a;
+    --line-strong: #36363a;
+    --faint: #7e7e88;
+    --foreground: #ffffff;
+    --surface: #0e0e0e;
+    --muted: #a5a5b0;
+    --default-hover: #141414;
+  }
+  [data-palette='midnight'] {
+    --canvas: #070b14;
+    --sunken: #0d1424;
+    --raised: #1b2844;
+    --line: #1e2e50;
+    --line-strong: #34466e;
+    --faint: #8392ad;
+    --foreground: #ffffff;
+    --surface: #121b30;
+    --muted: #a0b0cb;
+    --default-hover: #16213a;
+  }
+  /* Until a cover is playing; useArtworkTheme replaces these with its colours. */
+  [data-palette='artwork'] {
+    --canvas: #120c16;
+    --sunken: #191120;
+    --raised: #2a1f33;
+    --line: #2a2030;
+    --line-strong: #43364d;
+    --surface: #1c1423;
+    --default-hover: #231a2b;
+    /* Stronger than Dark's, so it holds AA on a surface tinted by any cover. */
+    --muted: #c2c5cd;
+  }
+
+  /* More contrast changes three tokens and nothing else. */
+  [data-contrast='more'] {
+    --line: #b8bfca;
+    --line-strong: #7c8594;
+    --muted: #464c58;
+  }
+  [data-theme='dark'][data-contrast='more'] {
+    --line: #3a3d44;
+    --line-strong: #6a6e78;
+    --muted: #c6cad2;
+  }
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-sunken: var(--sunken);
+  --color-raised: var(--raised);
+  --color-faint: var(--faint);
+  --color-record: var(--record);
+  --color-line-strong: var(--line-strong);
+  /* The services' brand colours, for their marks only (design/BrandMarks.tsx). */
+  --color-brand-spotify: #1db954;
+  --color-brand-youtube: #ff0000;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Type scale in rem, so Settings › Text size scales everything together. */
+@theme {
+  --text-page: 1.7333rem; /* 26px at the 15px default */
+  --text-page--line-height: 1.2;
+  --text-headline: 2.4rem; /* 36px */
+  --text-headline--line-height: 1.1;
+  --text-hero: 2.6667rem; /* 40px */
+  --text-hero--line-height: 1.1;
+  --text-step: 2.1333rem; /* 32px */
+  --text-step--line-height: 1.15;
+}
+
+@layer base {
+  :root {
+    --row-h: 56px;
+    --row-art: 40px;
+    --scrim: 90%;
+  }
+  .dark,
+  [data-theme='dark'] {
+    --scrim: 88%;
+  }
+  [data-density='compact'] {
+    --row-h: 44px;
+    --row-art: 30px;
+  }
+  /* Text over a backdrop: stronger than `muted`, so it holds AA on the lighter wash. */
+  section:has(> [data-backdrop]),
+  section:has(> [data-mesh]) {
+    --muted: color-mix(in srgb, var(--foreground) 86%, var(--surface));
+  }
+  [data-font='system'] {
+    --font-sans: ui-sans-serif, system-ui, sans-serif;
+  }
+}
+
+/* DESIGN.md › Artwork backdrop: page headers. 72% is the lowest under any text (18% down). */
+@utility scrim-fade {
+  background: linear-gradient(
+    color-mix(in srgb, var(--surface) 45%, transparent),
+    color-mix(in srgb, var(--surface) 72%, transparent) 18%,
+    var(--surface)
+  );
+}
+
+/* DESIGN.md › Artwork backdrop: a flat scrim, the lowest that keeps muted text at AA. */
+@utility scrim {
+  background: color-mix(in srgb, var(--surface) var(--scrim), transparent);
+}
+
+/* DESIGN.md › Contrast: an unselected switch track is `line-strong` (3:1 non-text). */
+@layer components {
+  /* DESIGN.md › Shape: buttons have 6px corners; only welcome, setup and search are pills. */
+  .button {
+    border-radius: var(--radius);
+  }
+  /* Secondary is a quiet `sunken` fill with `ink` text (DESIGN.md › Components). */
+  .button--secondary {
+    color: var(--foreground);
+  }
+  /* HeroUI tightens word spacing in keys, which runs "Ctrl S" together. */
+  .kbd {
+    word-spacing: normal;
+  }
+  .switch {
+    --switch-control-bg: var(--line-strong);
+  }
+}

@@ -1,0 +1,66 @@
+name: Community
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+concurrency:
+  group: community-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  community:
+    if: github.event.issue.pull_request == null
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Suggest related issues or handle assignment
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const repo = context.repo;
+            const issue = context.payload.issue;
+            if (context.eventName === 'issue_comment') {
+              const comment = context.payload.comment;
+              if (comment.user.type !== 'User') return;
+              const command = /^\/assign(?:[ \t]+@([a-z\d](?:[a-z\d-]{0,37}[a-z\d])?))?[ \t]*$/i.exec(comment.body.trim());
+              if (!command || issue.state !== 'open') return;
+              const actor = comment.user.login;
+              const assignee = command[1] || actor;
+              if (assignee.toLowerCase() !== actor.toLowerCase()) {
+                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ ...repo, username: actor });
+                if (!['admin', 'maintain', 'write', 'triage'].includes(data.permission) && data.role_name !== 'triage') {
+                  core.notice('Assigning another user requires triage, write, maintain, or admin permission.');
+                  return;
+                }
+              }
+              if (issue.assignees.some(user => user.login.toLowerCase() === assignee.toLowerCase())) return;
+              try {
+                await github.rest.issues.addAssignees({ ...repo, issue_number: issue.number, assignees: [assignee] });
+              } catch (error) {
+                if (error.status !== 422) throw error;
+                core.notice('GitHub could not assign this user; check that they can be assigned to the repository.');
+              }
+              return;
+            }
+            const marker = '<!-- community-related-issues -->';
+            const comments = await github.paginate(github.rest.issues.listComments, { ...repo, issue_number: issue.number, per_page: 100 });
+            if (comments.some(comment => comment.user.type === 'Bot' && comment.body.includes(marker))) return;
+            const ignored = new Set(['about', 'after', 'before', 'cannot', 'could', 'does', 'error', 'feature', 'from', 'have', 'issue', 'please', 'request', 'that', 'this', 'when', 'with']);
+            const terms = [...new Set((issue.title.toLowerCase().match(/[a-z0-9]{4,}/g) || []).filter(word => !ignored.has(word)))].slice(0, 3);
+            if (terms.length < 2) return;
+            const { data } = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${repo.owner}/${repo.repo} is:issue in:title ${terms.join(' ')}`,
+              sort: 'updated', order: 'desc', per_page: 6
+            });
+            const related = data.items.filter(item => item.number !== issue.number && !item.pull_request).slice(0, 3);
+            if (!related.length) return;
+            await github.rest.issues.createComment({
+              ...repo, issue_number: issue.number,
+              body: `${marker}\nThese issues have similar titles and may be related:\n${related.map(item => `- #${item.number}`).join('\n')}\n\nPlease compare them before deciding whether this is a duplicate. This suggestion does not close or label any issue.`
+            });

@@ -1,0 +1,91 @@
+# Installers, signing, fuses and the update feed. `npm run dist` runs this after
+# Forge has built the Vite output into .vite/.
+appId: dev.wavebit.app
+productName: wavebit
+copyright: Copyright © 2026 wavebit contributors
+directories:
+  output: out/builder
+  buildResources: assets/build
+files:
+  - .vite/**/*
+  - package.json
+  # Vite has bundled every dependency into .vite.
+  - '!**/node_modules/**'
+asar: true
+npmRebuild: false
+nodeGypRebuild: false
+extraResources:
+  - from: native/wavebit-native.node
+    to: wavebit-native.node
+  - from: assets/brand/icon.png
+    to: icon.png
+  - from: tools
+    to: tools
+    filter:
+      - '**/*'
+      - '!.stamp.json'
+# Keep in step with FusesPlugin in forge.config.mts (scripts/release-config.test.mjs).
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+publish:
+  provider: github
+  owner: Wavebit-app
+  repo: wavebit
+  releaseType: release
+artifactName: wavebit-${version}-${arch}.${ext}
+win:
+  executableName: wavebit
+  icon: assets/brand/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+# One-click, per user: a progress window with nothing to press and no
+# administrator prompt, for first installs and updates alike. It starts the app
+# when it finishes, which is how "Restart to update" reopens wavebit.
+nsis:
+  oneClick: true
+  perMachine: false
+  runAfterFinish: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+mac:
+  category: public.app-category.music
+  icon: assets/brand/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: assets/build/entitlements.mac.plist
+  entitlementsInherit: assets/build/entitlements.mac.inherit.plist
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    # The updater needs the zip.
+    - target: zip
+      arch:
+        - arm64
+linux:
+  executableName: wavebit
+  syncDesktopName: true
+  category: Audio
+  icon: assets/brand/icons
+  maintainer: wavebit contributors <257364883+shikki841@users.noreply.github.com>
+  synopsis: Your music files, Spotify library and YouTube Music in one player
+  description: A desktop music player for your own files, with your Spotify library matched against them and YouTube Music built in.
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64

@@ -1,0 +1,90 @@
+# NAPI-RS Documentation
+
+> NAPI-RS is a framework for building compiled Node.js add-ons in Rust via Node-API. This index links the Markdown source of every documentation and blog page.
+
+## Docs
+
+### Introduction
+
+- [Getting started](/docs/introduction/getting-started.md)
+- [Build your first package](/docs/introduction/simple-package.md)
+- [Manual setup](/docs/introduction/manual-setup.md)
+
+### Concepts & reference
+
+- [Exports](/docs/concepts/exports.md)
+- [Function](/docs/concepts/function.md)
+- [Values](/docs/concepts/values.md)
+- [Type conversions](/docs/concepts/type-conversions.md)
+- [Object](/docs/concepts/object.md)
+- [Class](/docs/concepts/class.md)
+- [Enum](/docs/concepts/enum.md)
+- [Errors and panics](/docs/concepts/error-handling.md)
+- [async fn](/docs/concepts/async-fn.md)
+- [Promise](/docs/concepts/promise.md)
+- [AsyncTask](/docs/concepts/async-task.md)
+- [ThreadsafeFunction](/docs/concepts/threadsafe-function.md)
+- [Iterators](/docs/concepts/iterators.md)
+- [Web Streams](/docs/concepts/streams.md)
+- [Typed Array](/docs/concepts/typed-array.md)
+- [External](/docs/concepts/external.md)
+- [Reference](/docs/concepts/reference.md)
+- [Understanding Lifetime](/docs/concepts/understanding-lifetime.md)
+- [Env](/docs/concepts/env.md)
+- [Inject Env](/docs/concepts/inject-env.md)
+- [Inject This](/docs/concepts/inject-this.md)
+- [Naming conventions](/docs/concepts/naming-conventions.md)
+- [#[napi] attributes](/docs/concepts/napi-attributes.md)
+- [Types Overwrite](/docs/concepts/types-overwrite.md)
+- [Module Initialization](/docs/concepts/module-init.md)
+- [Cargo features](/docs/concepts/cargo-features.md)
+- [Custom async runtime](/docs/concepts/async-runtime.md)
+- [WebAssembly](/docs/concepts/webassembly.md)
+
+### CLI
+
+- [New project](/docs/cli/new.md)
+- [Rename project](/docs/cli/rename.md)
+- [Build](/docs/cli/build.md)
+- [NAPI Config](/docs/cli/napi-config.md)
+- [Programmatic API](/docs/cli/programmatic-api.md)
+- [Create npm directories](/docs/cli/create-npm-dirs.md)
+- [Artifacts](/docs/cli/artifacts.md)
+- [Universalize](/docs/cli/universalize.md)
+- [Version packages](/docs/cli/version.md)
+- [Prepublish](/docs/cli/pre-publish.md)
+
+### Deep dive
+
+- [Release native packages](/docs/deep-dive/release.md)
+- [Native module](/docs/deep-dive/native-module.md)
+- [History](/docs/deep-dive/history.md)
+
+### Cross build
+
+- [Cross build](/docs/cross-build.md)
+
+### Guides & help
+
+- [Support and compatibility](/docs/more/support-compatibility.md)
+- [Testing and debugging](/docs/more/testing-debugging.md)
+- [Async and concurrency guide](/docs/more/async-concurrency.md)
+- [Bundlers and frameworks](/docs/more/integrations.md)
+- [Troubleshooting](/docs/more/troubleshooting.md)
+- [Cross-build FAQ](/docs/more/faq.md)
+- [V2 to V3 Migration Guide](/docs/more/v2-v3-migration-guide.md)
+- [Examples](/docs/more/examples.md)
+
+## Blog
+
+- [Functions and Callbacks in NAPI-RS](/blog/function-and-callbacks.md)
+- [Announce V3](/blog/announce-v3.md)
+- [Announce V2](/blog/announce-v2.md)
+
+## Changelog
+
+- [napi](/changelog/napi)
+- [napi-derive](/changelog/napi_derive)
+- [napi-sys](/changelog/napi_sys)
+- [napi-build](/changelog/napi_build)
+- [@napi-rs/cli](/changelog/napi-cli)

@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "warn"
+  },
+  "ignorePatterns": [
+    "native/index.d.ts",
+    "native/target/**",
+    ".claude/**",
+    ".agents/**"
+  ]
+}

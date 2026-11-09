@@ -1,0 +1,60 @@
+# Electron Forge
+
+## Electron Forge V7
+
+- [Getting Started](https://www.electronforge.io/readme.md): Quickly scaffold an Electron project with a full build pipeline
+- [Importing an Existing Project](https://www.electronforge.io/import-existing-project.md): Import an existing Electron project to use Electron Forge.
+- [CLI](https://www.electronforge.io/cli.md): How to use the command line interface (CLI) commands for Electron Forge
+- [Why Electron Forge?](https://www.electronforge.io/core-concepts/why-electron-forge.md): An overview of Forge and its role in shipping Electron apps.
+- [Build Lifecycle](https://www.electronforge.io/core-concepts/build-lifecycle.md): How Forge takes your app code from development to distribution.
+- [Configuration Overview](https://www.electronforge.io/config/configuration.md): How to configure Electron Forge
+- [TypeScript Setup](https://www.electronforge.io/config/typescript-configuration.md): Set up your Forge configuration to use TypeScript
+- [Plugins](https://www.electronforge.io/config/plugins.md): Modules to extend Forge's core functionality
+- [Webpack Plugin](https://www.electronforge.io/config/plugins/webpack.md): Transform and bundle code for your Electron Forge app with webpack.
+- [Vite Plugin](https://www.electronforge.io/config/plugins/vite.md): Transform and bundle code for your Electron Forge app with Vite.
+- [Electronegativity Plugin](https://www.electronforge.io/config/plugins/electronegativity.md): Check for misconfigurations and security anti-patterns with the Electronegativity tool.
+- [Auto Unpack Native Modules Plugin](https://www.electronforge.io/config/plugins/auto-unpack-natives.md): Reduce loading times and disk consumption by unpacking native Node modules from your Forge app's ASAR archive.
+- [Local Electron Plugin](https://www.electronforge.io/config/plugins/local-electron.md): Integrate a local build of Electron into your Forge app.
+- [Fuses Plugin](https://www.electronforge.io/config/plugins/fuses.md): Toggle Electron functionality at package-time with Electron Fuses.
+- [Makers](https://www.electronforge.io/config/makers.md): Generate platform specific distributables for Electron apps using Electron Forge.
+- [AppX](https://www.electronforge.io/config/makers/appx.md): Create a package for the Microsoft Store for your Electron app, using Electron Forge.
+- [deb](https://www.electronforge.io/config/makers/deb.md): Create a package for Debian-based Linux distributions for your Electron app, using Electron Forge.
+- [DMG](https://www.electronforge.io/config/makers/dmg.md): Generate a DMG with Electron Forge to distribute your Electron app on macOS.
+- [Flatpak](https://www.electronforge.io/config/makers/flatpak.md): Create a Flatpak app for your Electron app using Electron Forge.
+- [MSIX](https://www.electronforge.io/config/makers/msix.md): Create a MSIX package that can be shipped as a direct download or to the Microsoft Store for your Electron app, using Electron Forge.
+- [pkg](https://www.electronforge.io/config/makers/pkg.md): Create a .pkg file for your Electron app on macOS using Electron Forge.
+- [RPM](https://www.electronforge.io/config/makers/rpm.md): Create an RPM package for RedHat-based Linux distributions for your Electron app, using Electron Forge.
+- [Snapcraft](https://www.electronforge.io/config/makers/snapcraft.md): Create a Snap package for your Electron app using Electron Forge.
+- [Squirrel.Windows](https://www.electronforge.io/config/makers/squirrel.windows.md): Create a Windows installer for your Electron app using Electron Forge.
+- [WiX MSI](https://www.electronforge.io/config/makers/wix-msi.md): Create an MSI file for your Electron app on Windows using Electron Forge.
+- [ZIP](https://www.electronforge.io/config/makers/zip.md): Create a ZIP archive for your Electron app using Electron Forge.
+- [Publishers](https://www.electronforge.io/config/publishers.md)
+- [Bitbucket](https://www.electronforge.io/config/publishers/bitbucket.md)
+- [Electron Release Server](https://www.electronforge.io/config/publishers/electron-release-server.md)
+- [GitHub](https://www.electronforge.io/config/publishers/github.md)
+- [Google Cloud Storage](https://www.electronforge.io/config/publishers/gcs.md): Publishing your Electron app artifacts to a Google Cloud Storage bucket.
+- [Nucleus](https://www.electronforge.io/config/publishers/nucleus.md)
+- [S3](https://www.electronforge.io/config/publishers/s3.md): How to publish your distributable Electron app artifacts to Amazon S3
+- [Snapcraft](https://www.electronforge.io/config/publishers/snapcraft.md)
+- [Hooks](https://www.electronforge.io/config/hooks.md): Specify custom build logic with asynchronous callback functions
+- [Webpack](https://www.electronforge.io/templates/webpack-template.md): Create a new Electron app with Webpack
+- [Webpack + Typescript](https://www.electronforge.io/templates/typescript-+-webpack-template.md): Create a new Electron app with webpack and TypeScript.
+- [Vite](https://www.electronforge.io/templates/vite.md): Create a new Electron app with Vite.
+- [Vite + TypeScript](https://www.electronforge.io/templates/vite-+-typescript.md)
+- [Code Signing](https://www.electronforge.io/guides/code-signing.md): Configure Code Signing with Electron Forge
+- [Signing a Windows app](https://www.electronforge.io/guides/code-signing/code-signing-windows.md): Code signing is a security technology that you use to certify that an app was created by you.
+- [Signing a macOS app](https://www.electronforge.io/guides/code-signing/code-signing-macos.md): Code signing is a security technology that you use to certify that an app was created by you.
+- [Custom App Icons](https://www.electronforge.io/guides/create-and-add-icons.md): The purpose of this guide is to walk through the process of generating and setting an app icon, as well as setting installer and setup icons.
+- [Framework Integration](https://www.electronforge.io/guides/framework-integration.md): Use various frontend frameworks with Electron Forge
+- [Parcel](https://www.electronforge.io/guides/framework-integration/parcel.md): How to create an Electron app with the Parcel bundler and Electron Forge
+- [React](https://www.electronforge.io/guides/framework-integration/react.md): How to create an Electron app with React and Electron Forge
+- [React with TypeScript](https://www.electronforge.io/guides/framework-integration/react-with-typescript.md): How to create an Electron app with React, TypeScript, and Electron Forge
+- [Vue 3](https://www.electronforge.io/guides/framework-integration/vue-3.md): How to create an Electron app with Vue and Electron Forge
+- [Developing with WSL](https://www.electronforge.io/guides/developing-with-wsl.md): Developing with Windows Subsystem for Linux, on Windows
+- [Auto Update](https://www.electronforge.io/advanced/auto-update.md): Set up automatic updates for your Electron application
+- [Debugging](https://www.electronforge.io/advanced/debugging.md)
+- [Extending Electron Forge](https://www.electronforge.io/advanced/extending-electron-forge.md)
+- [Writing Plugins](https://www.electronforge.io/advanced/extending-electron-forge/writing-plugins.md)
+- [Writing Templates](https://www.electronforge.io/advanced/extending-electron-forge/writing-templates.md): How to write custom templates for Electron Forge.
+- [Writing Makers](https://www.electronforge.io/advanced/extending-electron-forge/writing-makers.md)
+- [Writing Publishers](https://www.electronforge.io/advanced/extending-electron-forge/writing-publishers.md)

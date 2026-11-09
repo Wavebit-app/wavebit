@@ -1,0 +1,496 @@
+@import 'tailwindcss';
+@import '@heroui/styles';
+@import '@fontsource-variable/inter';
+@import './theme.css';
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    font-size: var(--root-size, 15px);
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    overflow: hidden;
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.01em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+
+@utility drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+@utility no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Insets for safe areas and the on-screen keyboard (DESIGN.md › Compact). */
+@utility pb-safe {
+  padding-bottom: calc(
+    env(safe-area-inset-bottom, 0px) + env(keyboard-inset-height, 0px)
+  );
+}
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+@utility px-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Icon buttons in the player keep each icon's own size; HeroUI forces 16–20px. */
+@layer components {
+  .button.icon-sized svg:not([data-slot='spinner'] svg) {
+    width: attr(width px, 16px);
+    height: attr(height px, 16px);
+    margin: 0;
+  }
+}
+
+/* DESIGN.md › Page actions: the icon alone, with no fill even when hovered or pressed. */
+.button.icon-action,
+.button.icon-action:hover,
+.button.icon-action[data-hovered],
+.button.icon-action[data-pressed] {
+  background: transparent;
+}
+.button.icon-action {
+  transition: opacity 120ms ease;
+}
+.button.icon-action:hover,
+.button.icon-action[data-hovered] {
+  opacity: 0.7;
+}
+.button.icon-action[data-pressed] {
+  opacity: 0.5;
+}
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+/*
+ * Horizontal shelves (DESIGN.md › Home › Shelves), after BitChord's shelf.ts:
+ * each kind sets how many columns fit the page's width, and the list lays
+ * them out as grid-auto-columns: calc((100% - (n - 1) * gap) / n). Narrow
+ * pages use fractional counts so the next card peeks in and the row scrolls
+ * by touch; wide pages use whole counts and the hover arrows.
+ */
+@layer components {
+  .shelf {
+    container-type: inline-size;
+  }
+
+  /*
+   * Library's listening cards (DESIGN.md › Library): Top Picks' cards in a row
+   * of four that stays centred on the page, heading and all.
+   */
+  .listen-area {
+    max-width: 1240px;
+    margin-inline: auto;
+  }
+  .shelf-list {
+    --gap: 16px;
+    --rows: 1;
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(var(--rows), max-content);
+    grid-auto-columns: calc((100% - (var(--n) - 1) * var(--gap)) / var(--n));
+    column-gap: var(--gap);
+    /* Bleed to the workspace edge, so cards scroll under it rather than stop short. */
+    margin-inline: calc(-1 * var(--page-x, 0px));
+    padding-inline: var(--page-x, 0px);
+    scroll-padding-inline: var(--page-x, 0px);
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+  }
+  .shelf-list::-webkit-scrollbar {
+    display: none;
+  }
+  .shelf-list > * {
+    min-width: 0;
+    scroll-snap-align: start;
+  }
+  [data-motion='off'] .shelf-list,
+  [data-motion='reduced'] .shelf-list {
+    scroll-behavior: auto;
+  }
+
+  .shelf-list[data-kind='picks'],
+  .shelf-list[data-kind='listen'] {
+    --gap: 14px;
+    --n: 1.6;
+  }
+  /* Fewer than four cards sit in the middle; too many to fit start at the edge. */
+  .shelf-list[data-kind='listen'] {
+    justify-content: safe center;
+  }
+  .shelf-list[data-kind='square'] {
+    --n: 2.4;
+  }
+  .shelf-list[data-kind='circle'] {
+    --gap: 20px;
+    --n: 3.3;
+  }
+  .shelf-list[data-kind='tracks'] {
+    --gap: 12px;
+    --rows: 4;
+    --n: 1.12;
+  }
+  @container (min-width: 480px) {
+    .shelf-list[data-kind='picks'],
+    .shelf-list[data-kind='listen'] {
+      --n: 2.4;
+    }
+    .shelf-list[data-kind='square'] {
+      --n: 3.4;
+    }
+    .shelf-list[data-kind='circle'] {
+      --n: 4.4;
+    }
+    .shelf-list[data-kind='tracks'] {
+      --n: 1.6;
+    }
+  }
+  @container (min-width: 700px) {
+    .shelf-list[data-kind='listen'] {
+      --n: 4;
+    }
+    .shelf-list[data-kind='picks'] {
+      --n: 3;
+    }
+    .shelf-list[data-kind='square'] {
+      --n: 4;
+    }
+    .shelf-list[data-kind='circle'] {
+      --n: 6;
+    }
+    .shelf-list[data-kind='tracks'] {
+      --n: 2;
+    }
+  }
+  @container (min-width: 900px) {
+    .shelf-list[data-kind='picks'] {
+      --n: 4;
+    }
+    .shelf-list[data-kind='square'] {
+      --n: 5;
+    }
+    .shelf-list[data-kind='circle'] {
+      --n: 7;
+    }
+    .shelf-list[data-kind='tracks'] {
+      --n: 3;
+    }
+  }
+  @container (min-width: 1100px) {
+    .shelf-list[data-kind='picks'] {
+      --n: 5;
+    }
+    .shelf-list[data-kind='square'] {
+      --n: 6;
+    }
+    .shelf-list[data-kind='circle'] {
+      --n: 8;
+    }
+    .shelf-list[data-kind='tracks'] {
+      --n: 3;
+    }
+  }
+}
+
+/*
+ * The wavy seek bar (DESIGN.md › Player): the played part is a wave in
+ * `accent` that flows while playing and settles flat when paused; the rest is
+ * a flat line. One period is 24×12px; the wave is a mask over the accent
+ * fill, so it follows the accent and theme without any image of its own.
+ */
+@layer components {
+  .wave-played {
+    height: 12px;
+    background: var(--accent);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='12' viewBox='0 0 24 12'%3E%3Cpath d='M0 6 Q6 0.5 12 6 T24 6' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E")
+      repeat-x 0 50% / 24px 12px;
+    transform: scaleY(var(--wave-amp, 1));
+    transition: transform 300ms ease;
+    animation: wave-flow 1.1s linear infinite;
+    animation-play-state: var(--wave-run, running);
+  }
+  @keyframes wave-flow {
+    to {
+      mask-position: 24px 50%;
+    }
+  }
+  [data-motion='off'] .wave-played,
+  [data-motion='reduced'] .wave-played {
+    animation: none;
+  }
+  /* The slider stays for pointer, keyboard and screen readers; the wave draws the bar. */
+  .wave-slider .slider__track,
+  .wave-slider .slider__fill {
+    background: transparent;
+  }
+  .slider.wave-slider[data-orientation='horizontal']
+    .slider__track[data-fill-start='true'] {
+    border-inline-start-color: transparent;
+  }
+  /* A solid dot in the accent, so the handle reads in light and dark. */
+  .slider.wave-slider .slider__thumb {
+    border-radius: 50%;
+  }
+  .slider.wave-slider .slider__thumb::after {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: none;
+  }
+}
+
+/*
+ * Lyrics (DESIGN.md › Lyrics), sized and faded as BitChord's are: the current
+ * line a third of the way down, the rest fading by distance. Room at both
+ * ends lets the first and last lines reach that place.
+ */
+@layer components {
+  .lyrics ol {
+    padding-block: 30cqh 60cqh;
+  }
+  .lyrics {
+    container-type: size;
+    scrollbar-width: none;
+  }
+  .lyrics-panel {
+    --lyric-size: 1.3333rem;
+  }
+  .lyrics-full {
+    --lyric-size: 26px;
+  }
+  @media (min-width: 980px) {
+    .lyrics-full {
+      --lyric-size: 30px;
+    }
+  }
+  @media (min-width: 1320px) {
+    .lyrics-full {
+      --lyric-size: 36px;
+    }
+  }
+  @media (min-width: 1680px) {
+    .lyrics-full {
+      --lyric-size: 42px;
+    }
+  }
+  .lyric-line {
+    display: block;
+    width: 100%;
+    padding-block: calc(var(--lyric-size) * 0.35);
+    text-align: start;
+    font-size: var(--lyric-size);
+    line-height: 1.2;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--foreground);
+    opacity: var(--fade, 1);
+    transition:
+      opacity 200ms,
+      filter 200ms;
+  }
+  /* The full-screen player centres its words; the side panel reads from the left. */
+  .lyrics-centered {
+    text-align: center;
+  }
+  .lyrics-centered .lyric-line {
+    text-align: center;
+  }
+  /* Lifted, but short of the current line, so a resting pointer can't look like a second one. */
+  .lyric-line:hover {
+    opacity: max(var(--fade, 1), 0.8);
+  }
+  .lyric-line[data-current] {
+    font-weight: 700;
+  }
+  .lyric-still {
+    font-size: var(--lyric-size);
+    line-height: 1.3;
+    font-weight: 600;
+    padding-block: calc(var(--lyric-size) * 0.25);
+  }
+  .playing-bars {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    width: 12px;
+    height: 12px;
+  }
+  .playing-bars i {
+    width: 2px;
+    height: 100%;
+    border-radius: 1px;
+    background: currentColor;
+    transform-origin: bottom;
+    transform: scaleY(0.45);
+    animation: playing-bar 0.8s ease-in-out infinite alternate;
+  }
+  .playing-bars i:nth-child(2) {
+    transform: scaleY(0.9);
+    animation-delay: -0.35s;
+  }
+  .playing-bars i:nth-child(3) {
+    transform: scaleY(0.65);
+    animation-delay: -0.6s;
+  }
+  .playing-bars[data-paused] i,
+  [data-motion='off'] .playing-bars i,
+  [data-motion='reduced'] .playing-bars i {
+    animation: none;
+  }
+  @keyframes playing-bar {
+    from {
+      transform: scaleY(0.3);
+    }
+    to {
+      transform: scaleY(1);
+    }
+  }
+  .lyric-gap {
+    display: inline-flex;
+    gap: 0.3em;
+    height: 1.2em;
+    align-items: center;
+  }
+  .lyric-gap i {
+    width: 0.3em;
+    height: 0.3em;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .lyric-line[data-current] .lyric-gap i {
+    animation: lyric-breath 1.6s ease-in-out infinite;
+  }
+  .lyric-gap i:nth-child(2) {
+    animation-delay: 0.2s !important;
+  }
+  .lyric-gap i:nth-child(3) {
+    animation-delay: 0.4s !important;
+  }
+  [data-motion='off'] .lyric-line,
+  [data-motion='reduced'] .lyric-line {
+    transition: none;
+  }
+  [data-motion='off'] .lyric-gap i,
+  [data-motion='reduced'] .lyric-gap i {
+    animation: none !important;
+  }
+  /* Settings › Reduce blur: blurred artwork gives way to the solid fill behind it. */
+  [data-blur='off'] .art-blur {
+    display: none;
+  }
+  /* Settings › Blur unfocused lyrics. Off while a hand is on the scroller. */
+  [data-lyric-blur='true'] .lyric-line:not([data-current], :hover) {
+    filter: blur(calc(var(--away, 0) * 1.2px));
+  }
+  [data-lyric-blur='true'] .lyrics[data-browsing] .lyric-line {
+    filter: none;
+  }
+  /* Settings' inset groups (DESIGN.md › Settings), tonal in every theme. */
+  .settings-group {
+    overflow: hidden;
+    border-radius: 10px;
+    background-color: color-mix(in srgb, var(--foreground) 5%, var(--surface));
+  }
+  .settings-row:not([data-disabled]):hover {
+    background-color: color-mix(in srgb, var(--foreground) 5%, transparent);
+  }
+  .settings-group[data-flash],
+  .settings-group [data-flash] {
+    box-shadow: none;
+  }
+  /* A setting found by search. */
+  [data-setting] {
+    transition: background-color 300ms;
+  }
+  [data-setting][data-flash] {
+    background-color: var(--accent-soft);
+    box-shadow: 0 0 0 8px var(--accent-soft);
+  }
+  [data-motion='off'] [data-setting] {
+    transition: none;
+  }
+  [data-contrast='more'] .lyric-line {
+    opacity: max(var(--fade, 1), 0.85);
+  }
+}
+
+@keyframes lyric-breath {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* A sheet whose content fits it: it still scrolls with the wheel on a tiny window. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* Downloads: a cover turns into a circle in a wavy ring (DESIGN.md › Downloads). */
+.song-art {
+  transition:
+    border-radius 300ms ease,
+    scale 300ms ease;
+}
+.song-art-busy {
+  scale: 0.68;
+}
+.wave-ring-arc {
+  transition: stroke-dasharray 250ms linear;
+}
+.wave-ring-turn {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+[data-motion='full'] .wave-ring-turn {
+  animation: wave-ring-turn 4s linear infinite;
+}
+[data-motion='off'] .song-art,
+[data-motion='off'] .wave-ring-arc {
+  transition: none;
+}
+@keyframes wave-ring-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
