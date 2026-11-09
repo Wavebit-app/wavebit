@@ -269,7 +269,7 @@ export function Sidebar({ rail }: { rail: boolean }) {
           onPress={() => nav.go(m.route)}
         />
       ))}
-      {!rail && <SidebarLists />}
+      <SidebarLists rail={rail} />
     </Frame>
   );
 }

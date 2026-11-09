@@ -549,8 +549,9 @@ function About() {
       </Group>
       <Group title="Licences" anchor="licences">
         <p className="p-4 text-sm leading-relaxed text-muted">
-          Icons and the logo mark: Lucide (ISC). Inter (SIL Open Font Licence).
-          HeroUI, React and Electron (MIT). Not affiliated with Spotify.
+          wavebit is free software under the GPLv3. Icons and the logo mark:
+          Lucide (ISC). Inter (SIL Open Font Licence). HeroUI, React and
+          Electron (MIT). Not affiliated with Spotify.
         </p>
       </Group>
     </>

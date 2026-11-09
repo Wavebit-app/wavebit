@@ -26,4 +26,4 @@ npm run test:scripts   # when changing the release automation
 
 Use a Conventional Commit title such as `fix: keep the queue after a restart` or `feat: add playback speed`. `feat:` and `fix:` titles become the What's new text people read in the app, so write them for listeners. Explain the problem and how you tested it, add screenshots for visible changes, and link an issue with `Closes #123`. See the [automation rules](.github/AUTOMATION.md) for changes without an issue, and [RELEASING.md](.github/RELEASING.md) for how releases work.
 
-Contributions are licensed under the repository's MIT license. Please follow the [community guidelines](CODE_OF_CONDUCT.md).
+Contributions are licensed under the repository's GPLv3 license. Please follow the [community guidelines](CODE_OF_CONDUCT.md).
