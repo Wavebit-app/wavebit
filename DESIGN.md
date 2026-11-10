@@ -258,40 +258,41 @@ The first run is four screens: Welcome, then three setup steps (Add your music, 
 
 ### Welcome
 
-- **Expanded (840px and up):** title bar (logo and window controls only), then a split on `surface`. The left 56% holds the logo mark at 240px in the brand blue, stroke only, centred. The right 44% holds the column (at least 360px, content at most 400px), centred. There is no line, card or colour edge between the halves.
-- **Column:** "Welcome to wavebit" (40px, 600, -0.02em), one sentence ("Your music files and your Spotify library, in one quiet player."), the primary pill "Get started" with an arrow, and a quiet "Skip setup" text button beside it. Under them in `muted`: "Takes about a minute. You can change everything later in Settings."
-- **Narrower:** the mark shrinks to 120px at the top of one column, and the buttons go full width.
-- **Motion:** the mark fades in once over 400ms. Nothing else moves.
+- **Expanded (840px and up):** title bar (logo and window controls only), then a split on `surface`. The left 48% is the banner (below), filling that side top to bottom; the right 52% holds the column (content at most 440px), centred.
+- **Banner** (`design/Banner.tsx`, art in `features/onboarding/BannerArt.tsx`): the README banner (`assets/brand/banner.html`) on every screen. `#05070d`, three radial glows (the first in the chosen accent's light tone, so step 3 recolours it live), the wave mark at 5%, the white brand row, a bold headline whose second half is pale blue, and one line at 75% white, in the README's words. Welcome is the README banner itself: the words centred, and under them the README's screenshot of wavebit (`src/renderer/assets/welcome-screenshot.webp`, made from `docs/images/wavebit.png`) with 14px top corners, running off the foot (cut at the right when the banner is tall). On the steps, art previews the app: step 1 the folders actually added and the song count; step 2 wavebit with Spotify and YouTube Music lighting up once connected; step 3 the themes, the current one ringed. Artwork, not theme: the same in light and dark. Words and art cross-fade between screens (300ms; 150ms reduced; none off). Narrower than 840px it becomes a 12px-cornered strip above the column with the words only.
+- **Column:** "Welcome to wavebit" (40px, 600, -0.02em), one sentence ("Your music files, your Spotify library and YouTube Music, in one quiet player."), the primary pill "Get started" with an arrow, and a quiet "Skip setup" text button beside it. Under them in `muted`: "Takes about a minute. You can change everything later in Settings."
+- **Narrower:** the banner strip sits above one column, and the buttons go full width.
 
 ### Setup steps
 
-- **The same split as Welcome.** The left pane holds the step list: the 28px logo mark, then the three steps as rows with a 28px circular marker (the number in `muted` on `sunken`, `on-accent` on `accent` for the current step, a check on `accent-soft` once done), the step name and a one-line hint in `muted`. Steps are separated by 24px of space, never by a connecting line. A done step can be clicked to go back to it.
-- **The right pane** holds the step's own content in a column at most 440px wide: the step count ("Step 1 of 3", `muted`, 13px), the title (32px, 600), one sentence, the content, then the footer: Back as a quiet pill on the left, and the step's primary pill on the right (Continue, or the step's own verb), with Skip for now as a quiet text button beside it.
-- **Narrower than 840px:** the step list becomes a row of three 6px-high segments at the top (`accent` for done and current, `sunken` for the rest), and the footer pins to the bottom above the safe-area and keyboard insets.
+- **The same split as Welcome,** with that step's banner on the left. There is no step list.
+- **The column** at most 440px wide: three 6px-high segments (`accent` for done and current, `sunken` for the rest), the step count ("Step 1 of 3", `muted`, 13px), the title (32px, 600), one sentence, the content, then the footer: Back as a bare 24px arrow in a 48px square (Page actions) on the left, and the step's one primary pill on the right (Continue, or the step's own verb), with Skip for now as a quiet text button beside it.
+- **Large icons** (`design/IconTile.tsx`): what a step asks you to pick is a large clickable icon, not a button: an 88px (104px for accounts) `sunken` square with 22px corners and the icon, the name under it (14px, 600) and a status line (`muted`, `success` when done, `danger` on an error), with a `success` check on the corner once done. It lifts 2px onto `accent-soft` on hover. _Why: the owner asked for some setup actions to be large clickable icons rather than buttons._
 
 **Step 1, Add your music (the import screen).**
 
-- Each chosen folder is a 56px row: a 40px `sunken` tile with a folder icon, the folder name, its path and file count in `muted` (tabular figures), and a Remove icon button. "Add a folder" is a secondary pill under the list. Choosing a folder opens the system folder picker; the filesystem root and the home folder itself are refused inline with the reason.
+- "Add a folder" is a large icon (Folder plus) above the list, its status "Opens the folder picker" or "2 folders added". Each chosen folder is a 56px row: a 40px `sunken` tile with a folder icon, the folder name, its path in `muted`, and a Remove icon button. Choosing a folder opens the system folder picker; the filesystem root and the home folder itself are refused inline with the reason.
 - Reading starts as soon as a folder is added. While it runs: "Reading 1,204 of 3,890 files" over a flat 4px `ProgressBar`, then "3,890 songs found" with a check in `success`.
 - One switch row: "Watch these folders for new music" (on by default).
 - Continue is available once at least one folder has been added, or straight away as Skip for now.
 
-**Step 2, Connect Spotify.**
+**Step 2, Connect your accounts.**
 
-- What wavebit reads, as two lines with check icons (playlists and Liked Songs; your name and picture), and what it never does, as one `muted` line (post, follow, change playlists or see your password).
-- The primary pill is "Connect Spotify". The states:
+- Spotify and YouTube Music as two large icons side by side, each with its own state ("Playlists and Liked Songs" / "Finish in the Spotify window" / "Connected as Sam" / "Try again"). Connecting one never moves on by itself, so both can be connected; Continue replaces Skip for now once either is. YouTube Music signs in through the browser; with no OAuth client yet, its icon opens a sheet with the client form from Settings › YouTube Music, and sign-in starts once it's saved.
+
+Spotify's states:
 
 | State     | What the column shows                                                                                                                                                         |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Idle      | As above.                                                                                                                                                                     |
-| Waiting   | The pill shows its spinner and stays pending. Under it: "Finish signing in in the Spotify window. It shows accounts.spotify.com in its title." with Cancel and the `Kbd` Esc. |
-| Error     | An inline `Alert` under the pill: cancelled, the window was closed, timed out, the network is down, or Spotify changed its web player. The pill is the retry.                 |
-| Connected | The avatar and name with "Connected" in `success`, and the primary pill becomes Continue.                                                                                     |
+| Waiting   | The icon shows its spinner and stays pending. Under it: "Finish signing in in the Spotify window. It shows accounts.spotify.com in its title." with Cancel and the `Kbd` Esc. |
+| Error     | An inline `Alert` under the icons: timed out, the network is down, or Spotify changed its web player. Cancelling or closing the window shows nothing. The icon is the retry.  |
+| Connected | "Connected as …" in `success` under the icon, a check on its corner, and Skip for now becomes Continue.                                                                       |
 
 - **The sign-in window** is Spotify's own login page in a separate, isolated window, 480×720, titled with the host it shows ("accounts.spotify.com") so the person can see where they are typing.
 - **"What wavebit can see"** opens a sheet that says, in plain words: your playlists, Liked Songs, your name and picture. wavebit never posts, follows, edits playlists or sees your password. The session stays in this computer's encrypted cookie store, and signing out deletes it. wavebit is not an official Spotify app and uses the web player's session, which Spotify can change at any time.
 - **Weak storage.** On Linux with no keyring service the session can't be stored safely, so it lasts until wavebit quits, and the step and Settings › Account say so.
-- **Spotify's brand:** the Spotify name appears as text. wavebit does not draw Spotify's logo.
+- **Spotify's brand:** its mark appears as itself, in its own green (`design/BrandMarks.tsx`), on the step 2 icon, in the banner and in the title bar's connect labels.
 
 **Step 3, Make it yours.**
 

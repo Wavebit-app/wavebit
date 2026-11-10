@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import type { WavebitApi } from '../shared/ipc/api';
 
 declare global {

@@ -3,6 +3,7 @@ import { Check, Folder, FolderPlus, X } from 'lucide-react';
 import { useState } from 'react';
 import type { AddFolderResult } from '../../../shared/schemas/library';
 import { menuOn } from '../../design/ContextMenu';
+import { IconTile } from '../../design/IconTile';
 import { count } from '../../lib/format';
 import { folderMenu } from '../menus/menus';
 import {
@@ -23,17 +24,47 @@ const REFUSALS: Record<
   limit: 'wavebit reads up to 20 folders. Remove one first.',
 };
 
-/** The chosen folders, Add a folder, and reading progress (setup step 1 and Settings › Library). */
-export function FolderList({ pill = false }: { pill?: boolean }) {
+/**
+ * The chosen folders, Add a folder, and reading progress (setup step 1 and
+ * Settings › Library). In setup, Add a folder is a large icon above the list.
+ */
+export function FolderList({
+  pill = false,
+  tile = false,
+}: {
+  pill?: boolean;
+  tile?: boolean;
+}) {
   const state = useLibraryState().data;
   const add = useAddFolder();
   const remove = useRemoveFolder();
   const progress = useScanProgress();
   const [refusal, setRefusal] = useState<string | null>(null);
   const radius = pill ? 'rounded-full' : '';
+  const addFolder = () =>
+    add.mutate(undefined, {
+      onSuccess: (result) =>
+        setRefusal(result.ok ? null : REFUSALS[result.reason]),
+    });
+  const folders = state?.folders.length ?? 0;
 
   return (
     <div className="flex flex-col">
+      {tile && (
+        <div className="mb-4 flex">
+          <IconTile
+            label="Add a folder"
+            icon={<FolderPlus size={38} strokeWidth={1.8} aria-hidden />}
+            status={
+              folders
+                ? `${count(folders, 'folder')} added`
+                : 'Opens the folder picker'
+            }
+            isPending={add.isPending}
+            onPress={addFolder}
+          />
+        </div>
+      )}
       <div className="flex flex-col gap-1">
         {state?.folders.map((folder) => {
           const name = folder.split(/[\\/]/).filter(Boolean).at(-1) ?? folder;
@@ -76,20 +107,17 @@ export function FolderList({ pill = false }: { pill?: boolean }) {
           );
         })}
       </div>
-      <Button
-        variant="secondary"
-        className={`mt-3 self-start ${radius}`}
-        isPending={add.isPending}
-        onPress={() =>
-          add.mutate(undefined, {
-            onSuccess: (result) =>
-              setRefusal(result.ok ? null : REFUSALS[result.reason]),
-          })
-        }
-      >
-        <FolderPlus size={16} aria-hidden />
-        Add a folder
-      </Button>
+      {!tile && (
+        <Button
+          variant="secondary"
+          className={`mt-3 self-start ${radius}`}
+          isPending={add.isPending}
+          onPress={addFolder}
+        >
+          <FolderPlus size={16} aria-hidden />
+          Add a folder
+        </Button>
+      )}
       {refusal && (
         <Alert status="warning" role="alert" className="mt-3">
           <Alert.Indicator />
