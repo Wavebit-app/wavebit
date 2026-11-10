@@ -49,6 +49,7 @@ export const Channels = {
   youtubeHome: 'youtube:home',
   appRefresh: 'app:refresh',
   appCopy: 'app:copy',
+  appFullScreen: 'app:fullScreen',
   libraryShowInFolder: 'library:showInFolder',
   libraryOpenFolder: 'library:openFolder',
   libraryFileInfo: 'library:fileInfo',
@@ -106,6 +107,7 @@ export const Events = {
   trayCommand: 'tray:command',
   downloadsChanged: 'downloads:changed',
   updateStatus: 'updates:statusChanged',
+  leftFullScreen: 'app:leftFullScreen',
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];

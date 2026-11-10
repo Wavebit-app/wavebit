@@ -3,7 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Settings } from '../../shared/schemas/settings';
 import { refreshScope, useNav } from '../app/router';
-import { useUi } from '../app/ui';
+import { setUi, useUi } from '../app/ui';
+import { Events } from '../../shared/ipc/channels';
 import { ContextMenuHost } from '../design/ContextMenu';
 import { DetailsSheetHost } from '../design/DetailsSheet';
 import { PullIndicator } from '../design/PullIndicator';
@@ -47,6 +48,7 @@ export function AppShell({
   const size = useSizeClass();
   const { route } = useNav();
   const panel = useUi((s) => s.panel);
+  const fullPlayer = useUi((s) => s.fullPlayer);
   const Drawer = panel ? DRAWERS[panel] : null;
   const [shortcuts, setShortcuts] = useState(false);
   useTrayBridge(() => update.mutate({ closeToTray: !settings.closeToTray }));
@@ -70,6 +72,19 @@ export function AppShell({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [ctx]);
+
+  // DESIGN.md › Full-screen player: the window goes full screen with it, and
+  // leaving full screen any other way closes the player.
+  useEffect(() => {
+    void window.wavebit.app.fullScreen(fullPlayer);
+  }, [fullPlayer]);
+  useEffect(
+    () =>
+      window.wavebit.on(Events.leftFullScreen, () =>
+        setUi({ fullPlayer: false }),
+      ),
+    [],
+  );
 
   // A new page starts at the top.
   useEffect(() => {
@@ -104,7 +119,7 @@ export function AppShell({
 
   return (
     <div className="flex h-full flex-col bg-canvas text-foreground">
-      <TitleBar menus={menuList} minimal={compact} connect />
+      {!fullPlayer && <TitleBar menus={menuList} minimal={compact} connect />}
       <div className="relative flex min-h-0 flex-1">
         {!compact && <Sidebar rail={rail} />}
         {!compact && !rail && (
