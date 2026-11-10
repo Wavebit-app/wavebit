@@ -234,6 +234,8 @@
 }
 
 @theme inline {
+  /* The sidebar, workspace and right panel (DESIGN.md › Layout › Panels). */
+  --radius-panel: 8px;
   --color-canvas: var(--canvas);
   --color-sunken: var(--sunken);
   --color-raised: var(--raised);

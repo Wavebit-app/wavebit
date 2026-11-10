@@ -42,7 +42,7 @@ export function SideOrBottomSheet({
         {/* The queue's column: its width, from the title bar down to the player bar, or the window's edge when there's no player. */}
         <Drawer.Content
           placement="right"
-          className="top-11 bottom-[var(--player-bar-h,0px)] h-auto justify-end"
+          className="top-[48px] bottom-[var(--player-bar-h,0px)] h-auto justify-end"
         >
           <Drawer.Dialog className="h-full w-[360px] max-w-[85vw] sm:w-[360px]">
             <Drawer.CloseTrigger />

@@ -62,7 +62,7 @@ export function PlayerBar() {
   // Side sheets end where this bar begins, and it isn't always there.
   useLayoutEffect(() => {
     const root = document.documentElement.style;
-    root.setProperty('--player-bar-h', hasTrack ? '76px' : '0px');
+    root.setProperty('--player-bar-h', hasTrack ? '84px' : '0px');
     return () => {
       root.removeProperty('--player-bar-h');
     };
@@ -71,10 +71,10 @@ export function PlayerBar() {
   return (
     <footer
       aria-label="Player"
-      className="grid h-[76px] shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)] items-center gap-6 pr-5 pl-3"
+      className="grid h-[84px] shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)] items-center gap-6 pr-5 pl-3"
     >
       <NowPlaying />
-      <div className="flex flex-col items-center gap-0.5">
+      <div className="flex flex-col items-center justify-center gap-1">
         <Transport />
         <SeekBar />
       </div>

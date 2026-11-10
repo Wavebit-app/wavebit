@@ -4,6 +4,7 @@ import {
   DRAWER,
   drawerMax,
   fitColumns,
+  GUTTERS,
   MIN_WORKSPACE,
   RAIL,
   SIDEBAR,
@@ -34,19 +35,22 @@ test('out of range values are brought back in', () => {
 test('the page keeps its minimum on every window that can give it', () => {
   for (const window of [1100, 1280, 1366, 1600, 1920, 2560]) {
     const fit = fitColumns({ sidebar: 360, drawer: 520 }, window, open);
-    assert.ok(window - fit.sidebar - fit.drawer >= MIN_WORKSPACE, `${window}`);
+    assert.ok(
+      window - GUTTERS - fit.sidebar - fit.drawer >= MIN_WORKSPACE,
+      `${window}`,
+    );
   }
 });
 
 test('the drawer gives way before the sidebar', () => {
-  const fit = fitColumns({ sidebar: 232, drawer: 520 }, 1100, open);
+  const fit = fitColumns({ sidebar: 232, drawer: 520 }, 1116, open);
   assert.equal(fit.sidebar, 232);
   assert.equal(fit.drawer, 388);
 });
 
 test('the sidebar only grows when the player bar has room', () => {
-  assert.equal(sidebarMax(1100, 0), SIDEBAR.initial);
-  assert.equal(sidebarMax(1300, 0), 300);
+  assert.equal(sidebarMax(1116, 0), SIDEBAR.initial);
+  assert.equal(sidebarMax(1316, 0), 300);
 });
 
 test('a smallest window stops at the minimums', () => {
@@ -57,7 +61,7 @@ test('a smallest window stops at the minimums', () => {
 });
 
 test('a rail is a fixed width and leaves the drawer the room', () => {
-  const fit = fitColumns({ sidebar: 300, drawer: 520 }, 1072, {
+  const fit = fitColumns({ sidebar: 300, drawer: 520 }, 1088, {
     sidebar: false,
     drawer: true,
   });

@@ -6,14 +6,14 @@ import { Lyrics } from './Lyrics';
 
 /** The drawer's words: a playing video stays at the top. */
 export function LyricsPanel({
-  className = 'w-[var(--drawer-width,360px)]',
+  className = 'w-[var(--drawer-width,360px)] rounded-panel bg-surface',
 }: {
   className?: string;
 }) {
   return (
     <aside
       aria-label="Lyrics"
-      className={`flex ${className} shrink-0 flex-col overflow-hidden bg-canvas`}
+      className={`flex ${className} shrink-0 flex-col overflow-hidden`}
     >
       <VideoStrip />
       <div className="flex min-h-0 flex-1 flex-col pt-5 pr-4 pb-4 pl-5">

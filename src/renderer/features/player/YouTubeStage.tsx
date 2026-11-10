@@ -98,7 +98,7 @@ export function YouTubeStage() {
         height: placement.rect.height,
         ...(backdrop && {
           maskImage: MASKS[kind],
-          clipPath: `inset(${placement.clipTop}px 0 ${placement.clipBottom}px 0)`,
+          clipPath: `inset(${placement.clipTop}px 0 ${placement.clipBottom}px 0${compact ? '' : ' round 8px 8px 0 0'})`,
         }),
       }
     : OFF_SCREEN;

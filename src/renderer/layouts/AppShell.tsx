@@ -138,7 +138,7 @@ export function AppShell({
               <main
                 ref={scroller}
                 id="workspace"
-                className={`min-w-0 flex-1 overflow-y-auto bg-surface ${compact ? 'pb-[calc(160px+env(safe-area-inset-bottom,0px)+env(keyboard-inset-height,0px))]' : 'rounded-l-md'}`}
+                className={`min-w-0 flex-1 overflow-y-auto bg-surface ${compact ? 'pb-[calc(160px+env(safe-area-inset-bottom,0px)+env(keyboard-inset-height,0px))]' : 'rounded-panel'}`}
               >
                 <PullIndicator pull={pull} refreshing={refreshing} />
                 {children}
@@ -163,7 +163,7 @@ export function AppShell({
         {/* No z-index: the drawer's buttons have to sit above the video stage. */}
         {compact && Drawer && (
           <div className="absolute inset-0 flex">
-            <Drawer className="w-full pt-safe" />
+            <Drawer className="w-full bg-canvas pt-safe" />
           </div>
         )}
         <FullPlayer />

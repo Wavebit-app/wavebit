@@ -41,7 +41,7 @@ function Row({
 }) {
   return (
     <div
-      className="group relative -mx-2 flex h-[52px] items-center gap-2 rounded-md px-2 hover:bg-overlay focus-within:bg-overlay"
+      className="group relative -mx-2 flex h-[52px] items-center gap-2 rounded-md px-2 hover:bg-sunken focus-within:bg-sunken"
       draggable={!!drag}
       onDragStart={(e) =>
         drag &&
@@ -159,7 +159,7 @@ function Heading({ children }: { children: string }) {
  * Remove and the song's own actions. Clear removes only the songs you added.
  */
 export function QueuePanel({
-  className = 'w-[var(--drawer-width,360px)]',
+  className = 'w-[var(--drawer-width,360px)] rounded-panel bg-surface',
 }: {
   className?: string;
 }) {
@@ -208,7 +208,7 @@ export function QueuePanel({
   return (
     <aside
       aria-label="Up next"
-      className={`flex ${className} shrink-0 flex-col overflow-hidden bg-canvas`}
+      className={`flex ${className} shrink-0 flex-col overflow-hidden`}
     >
       <VideoStrip />
       <div className="flex min-h-0 flex-1 flex-col pt-5 pr-4 pb-4 pl-5">
@@ -265,7 +265,7 @@ export function QueuePanel({
               <h3 className="mt-3 mb-1.5 text-[0.8667rem] font-semibold text-muted">
                 Now playing
               </h3>
-              <div className="-mx-2 flex h-[52px] items-center gap-3 rounded-md bg-surface px-2">
+              <div className="-mx-2 flex h-[52px] items-center gap-3 rounded-md bg-foreground/5 px-2">
                 <SongArt track={current} src={current.artwork} size={40} />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="flex min-w-0 items-center gap-1.5">
