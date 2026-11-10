@@ -555,7 +555,7 @@ Opened from the player bar's expand button, a click on its artwork, or a tap on 
   - **Speed and timing:** **Playback speed** (0.5× to 2×, pitch kept; also YouTube's player). **Skip silence** (switch, files only): a gap past 1 second plays at 4× until sound returns. **Sleep timer**: 15, 30, 45 or 60 minutes or the end of this song; it lasts until wavebit quits. One `muted` sentence says these effects can't reach YouTube's embedded player.
   - **Remember the queue between launches** (switch).
   - **AutoPlay** (switch; the same setting as the queue's button) and **Don't repeat songs** (switch, off while AutoPlay is off).
-- **About:** the 72px logo, the version, and the runtime versions as a two-column list (no table lines).
+- **About:** the 72px logo, the version, and the runtime versions (wavebit, the Rust native module and the platform; not Electron, Chromium or Node.js) as a two-column list (no table lines).
 - **Switch rows:** the whole row toggles, with the switch on the right. A switch that cannot work here is disabled and its description says why.
 
 ## Motion

@@ -73,9 +73,6 @@ export interface AppInfo {
   trayAvailable: boolean;
   name: string;
   version: string;
-  electron: string;
-  chrome: string;
-  node: string;
   platform: string;
   arch: string;
   nativeVersion: string;
