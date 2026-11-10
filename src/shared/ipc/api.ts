@@ -93,6 +93,8 @@ export interface EventPayloads {
   [Events.trayCommand]: TrayCommand;
   [Events.downloadsChanged]: DownloadsDelta;
   [Events.updateStatus]: UpdateStatus;
+  /** The window left the full screen the full-screen player put it in. */
+  [Events.leftFullScreen]: null;
 }
 
 /** What the preload exposes as `window.wavebit`. */
@@ -107,6 +109,8 @@ export interface WavebitApi {
     refresh(scope: RefreshScope): Promise<void>;
     /** Puts text on the clipboard; the page itself has no clipboard permission. */
     copy(text: string): Promise<void>;
+    /** The full-screen player takes the whole screen, title bar and all. */
+    fullScreen(on: boolean): Promise<void>;
   };
   settings: {
     get(): Promise<Settings>;

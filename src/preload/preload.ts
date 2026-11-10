@@ -15,6 +15,7 @@ const api: WavebitApi = {
     setTray: (state) => invoke(Channels.appTray, state),
     refresh: (scope) => invoke(Channels.appRefresh, { scope }),
     copy: (text) => invoke(Channels.appCopy, { text }),
+    fullScreen: (on) => invoke(Channels.appFullScreen, { on }),
   },
   settings: {
     get: () => invoke(Channels.settingsGet),

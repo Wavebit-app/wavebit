@@ -25,8 +25,8 @@ import { VideoSlot } from './VideoSlot';
 import { useVideoStage } from './videoStage';
 
 /**
- * DESIGN.md › Full-screen player: covers the sidebar and workspace (the title
- * bar stays), with the artwork backdrop behind everything.
+ * DESIGN.md › Full-screen player: the window goes full screen and the player
+ * covers all of it (no title bar), with the artwork backdrop behind everything.
  */
 export function FullPlayer() {
   const open = useUi((s) => s.fullPlayer);
