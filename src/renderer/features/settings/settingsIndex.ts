@@ -419,8 +419,8 @@ export const SETTINGS: SettingEntry[] = [
     [
       'runtime',
       'Runtime',
-      'Electron, Chromium, Node and V8 versions.',
-      'electron node chromium',
+      'wavebit, native module and platform versions.',
+      'version native platform',
     ],
     [
       'licences',

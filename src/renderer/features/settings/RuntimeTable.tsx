@@ -23,9 +23,6 @@ export function RuntimeTable({ info }: { info: AppInfo }) {
     () => [
       { component: 'wavebit', version: info.version },
       { component: 'Rust native module', version: info.nativeVersion },
-      { component: 'Electron', version: info.electron },
-      { component: 'Chromium', version: info.chrome },
-      { component: 'Node.js', version: info.node },
       { component: 'Platform', version: `${info.platform} ${info.arch}` },
     ],
     [info],
