@@ -13,7 +13,7 @@ const field =
   'h-10 w-full rounded-md bg-sunken px-3 text-sm ring-1 ring-[var(--field-border)] outline-none focus:ring-2 focus:ring-accent';
 
 /** Pasting your own Desktop-app OAuth client, with the steps to make one. */
-function SetUp() {
+export function SetUp() {
   const { configure } = useYtOAuthActions();
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
