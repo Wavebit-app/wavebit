@@ -42,9 +42,20 @@ export function EqualizerSheet({
     setBands(next);
     player.previewEqualizer(next, balance);
   };
+  // A save that fails puts back what is saved, in the sheet and in the sound.
+  const undo = {
+    onError: () => {
+      setBands(settings.equalizerBands);
+      setBalance(settings.equalizerBalance);
+      player.previewEqualizer(
+        settings.equalizerBands,
+        settings.equalizerBalance,
+      );
+    },
+  };
   const saveBands = (equalizerBands: readonly number[]) => {
     setBands([...equalizerBands]);
-    update.mutate({ equalizerBands: [...equalizerBands] });
+    update.mutate({ equalizerBands: [...equalizerBands] }, undo);
   };
 
   return (
@@ -129,11 +140,14 @@ export function EqualizerSheet({
           maxValue={1}
           step={0.05}
           value={balance}
+          isDisabled={!on}
           onChange={(v) => {
             setBalance(first(v));
             player.previewEqualizer(bands, first(v));
           }}
-          onChangeEnd={(v) => update.mutate({ equalizerBalance: first(v) })}
+          onChangeEnd={(v) =>
+            update.mutate({ equalizerBalance: first(v) }, undo)
+          }
           className="flex-1"
         >
           <Slider.Track className="h-1">

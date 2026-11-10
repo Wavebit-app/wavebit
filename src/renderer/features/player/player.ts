@@ -15,15 +15,9 @@ import { forLyricsSearch, primaryArtist } from '../../../shared/lrc';
 import { sameRecording, songTitleOfVideo } from '../../../shared/lyricsParse';
 import { artUrl, trackUrl } from '../../lib/format';
 import { gainFor } from './gain';
-import {
-  BAND_HZ,
-  FLAT_BANDS,
-  isSilent,
-  preampGain,
-  stereoMatrix,
-  type StereoMatrix,
-} from './audioEffects';
+import { FLAT_BANDS, isSilent, soundTargets } from './audioEffects';
 import { newListen, REPORT_MS, tick } from './listenSampler';
+import { buildSound, setSound, type Sound } from './soundGraph';
 import { youtubeEmbed } from './youtubeEmbed';
 
 /**
@@ -225,57 +219,11 @@ const B = () => decks[1 - active]!;
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
-let preamp: GainNode | null = null;
-let filters: BiquadFilterNode[] = [];
-let matrix: Record<keyof StereoMatrix, GainNode> | null = null;
+let sound: Sound | null = null;
 
 /** Sets the equaliser and stereo stages; off, they pass the sound untouched. */
 function applySound(): void {
-  if (!ctx || !preamp || !matrix) return;
-  const now = ctx.currentTime;
-  const bands = options.equalizer ? options.bands : FLAT_BANDS;
-  preamp.gain.setTargetAtTime(preampGain(bands), now, 0.02);
-  filters.forEach((filter, i) =>
-    filter.gain.setTargetAtTime(bands[i] ?? 0, now, 0.02),
-  );
-  const target = stereoMatrix(options.spatial, options.balance);
-  for (const key of Object.keys(target) as (keyof StereoMatrix)[])
-    matrix[key].gain.setTargetAtTime(target[key], now, 0.02);
-}
-
-/**
- * The sound stages every deck shares, after its fader:
- * preamp, seven bands, then a left and right matrix into the master volume.
- */
-function buildSound(context: AudioContext, output: GainNode): GainNode {
-  const input = context.createGain();
-  // Without this a mono file would reach the splitter with its right side empty.
-  input.channelCount = 2;
-  input.channelCountMode = 'explicit';
-  input.channelInterpretation = 'speakers';
-  filters = BAND_HZ.map((hz, i) => {
-    const filter = context.createBiquadFilter();
-    filter.type =
-      i === 0 ? 'lowshelf' : i === BAND_HZ.length - 1 ? 'highshelf' : 'peaking';
-    filter.frequency.value = hz;
-    filter.Q.value = 1;
-    return filter;
-  });
-  const split = context.createChannelSplitter(2);
-  const merge = context.createChannelMerger(2);
-  const stage = () => context.createGain();
-  matrix = { ll: stage(), rl: stage(), lr: stage(), rr: stage() };
-  input.connect(filters[0]!);
-  filters.forEach(
-    (filter, i) => filters[i + 1] && filter.connect(filters[i + 1]!),
-  );
-  filters.at(-1)!.connect(split);
-  split.connect(matrix.ll, 0).connect(merge, 0, 0);
-  split.connect(matrix.rl, 1).connect(merge, 0, 0);
-  split.connect(matrix.lr, 0).connect(merge, 0, 1);
-  split.connect(matrix.rr, 1).connect(merge, 0, 1);
-  merge.connect(output);
-  return input;
+  if (ctx && sound) setSound(sound, soundTargets(options), ctx.currentTime);
 }
 
 /** Built on the first play (a user gesture), so the AudioContext may start. */
@@ -288,13 +236,13 @@ function graph(): void {
   master = ctx.createGain();
   master.gain.value = state.volume;
   master.connect(ctx.destination);
-  preamp = buildSound(ctx, master);
+  sound = buildSound(ctx, master);
   for (const deck of decks) {
     const source = ctx.createMediaElementSource(deck.el);
     deck.level = ctx.createGain();
     deck.fade = ctx.createGain();
     deck.analyser = ctx.createAnalyser();
-    source.connect(deck.level).connect(deck.fade).connect(preamp);
+    source.connect(deck.level).connect(deck.fade).connect(sound.preamp);
     deck.level.connect(deck.analyser);
   }
   applySound();

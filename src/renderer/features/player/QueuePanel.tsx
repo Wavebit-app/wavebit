@@ -1,7 +1,6 @@
 import { Button } from '@heroui/react';
 import {
   ArrowLeft,
-  AudioWaveform,
   GripVertical,
   Infinity as InfinityIcon,
   ListStart,
@@ -14,6 +13,7 @@ import { setUi } from '../../app/ui';
 import { OnDevice, SongArt } from '../downloads/SongArt';
 import { YouTubeMusicMark } from '../../design/BrandMarks';
 import { menuOn } from '../../design/ContextMenu';
+import { PlayingBars } from '../../design/PlayingBars';
 import { songMenu } from '../menus/menus';
 import { IconButton } from './controls';
 import { usePlayHistory, useSettings } from '../../lib/queries';
@@ -169,6 +169,7 @@ export function QueuePanel({
   const source = usePlayer((s) => s.source);
   const autoplay = usePlayer((s) => s.autoplay);
   const autoplayStart = usePlayer((s) => s.autoplayStart);
+  const paused = usePlayer((s) => !s.playing);
   usePlayer((s) => s.shuffle);
   const [over, setOver] = useState<number | null>(null);
   const current = queue[index];
@@ -278,11 +279,7 @@ export function QueuePanel({
                     {current.artist}
                   </span>
                 </span>
-                <AudioWaveform
-                  size={18}
-                  className="text-accent"
-                  aria-label="Playing"
-                />
+                <PlayingBars paused={paused} className="mr-1 text-accent" />
               </div>
             </>
           )}

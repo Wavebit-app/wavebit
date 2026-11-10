@@ -7,6 +7,7 @@ import { nav } from '../../app/router';
 import { Artwork } from '../../design/Artwork';
 import { PlaylistCover } from '../../design/PlaylistCover';
 import { menuOn } from '../../design/ContextMenu';
+import { PlayingBars } from '../../design/PlayingBars';
 import { artUrl, count, initials } from '../../lib/format';
 import { useRemoveImport } from '../../lib/queries';
 import {
@@ -125,7 +126,14 @@ export function TrackCell({
   meta?: string;
   onPlay: () => void;
 }) {
-  const playing = usePlayer((s) => s.queue[s.index]?.id === track.id);
+  const now = usePlayer((s) =>
+    s.queue[s.index]?.id === track.id
+      ? s.playing
+        ? 'playing'
+        : 'paused'
+      : null,
+  );
+  const playing = now !== null;
   return (
     <div
       onContextMenu={menuOn(() => songMenu(track, { onPlay }))}
@@ -148,6 +156,7 @@ export function TrackCell({
             {track.artist}
           </span>
         </span>
+        {now && <PlayingBars paused={now === 'paused'} />}
         {meta && (
           <span className="shrink-0 text-[0.8667rem] text-muted tabular-nums">
             {meta}
