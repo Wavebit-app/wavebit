@@ -1,7 +1,8 @@
-import { AudioWaveform, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { YouTubeMusicMark } from '../../design/BrandMarks';
 import { menuOn } from '../../design/ContextMenu';
+import { PlayingBars } from '../../design/PlayingBars';
 import { WaveRing } from '../../design/WaveRing';
 import { clock } from '../../lib/format';
 import { OnDevice, SongArt } from '../downloads/SongArt';
@@ -62,9 +63,15 @@ export function SongRow({
   onDelete,
   columns,
 }: SongRowProps) {
-  const playing = usePlayer(
-    (s) => !!track && s.queue[s.index]?.id === track.id,
+  // One value, so a row redraws only when its own song plays or pauses.
+  const now = usePlayer((s) =>
+    track && s.queue[s.index]?.id === track.id
+      ? s.playing
+        ? 'playing'
+        : 'paused'
+      : null,
   );
+  const playing = now !== null;
   const download = useSongDownload(track);
   const downloading =
     download.state === 'queued' || download.state === 'running';
@@ -117,11 +124,7 @@ export function SongRow({
             />
           </span>
         ) : playing ? (
-          <AudioWaveform
-            size={18}
-            className="text-accent"
-            aria-label="Playing"
-          />
+          <PlayingBars paused={now === 'paused'} />
         ) : (
           no
         )}

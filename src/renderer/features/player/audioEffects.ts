@@ -85,6 +85,36 @@ export function stereoMatrix(widen: boolean, balance: number): StereoMatrix {
   };
 }
 
+/** A shelf at each end, bells between. */
+export const bandKind = (i: number): BiquadFilterType =>
+  i === 0 ? 'lowshelf' : i === BAND_HZ.length - 1 ? 'highshelf' : 'peaking';
+
+export interface SoundTargets {
+  /** Linear gain before the bands. */
+  preamp: number;
+  /** Each band in dB. */
+  gains: number[];
+  matrix: StereoMatrix;
+}
+
+/**
+ * What the sound stages are set to. Off, the equalizer and its balance pass
+ * the sound untouched; spatial audio is its own switch.
+ */
+export function soundTargets(o: {
+  equalizer: boolean;
+  bands: readonly number[];
+  balance: number;
+  spatial: boolean;
+}): SoundTargets {
+  const bands = o.equalizer ? o.bands : FLAT_BANDS;
+  return {
+    preamp: preampGain(bands),
+    gains: BAND_HZ.map((_, i) => bands[i] ?? 0),
+    matrix: stereoMatrix(o.spatial, o.equalizer ? o.balance : 0),
+  };
+}
+
 /** Below this peak (about -50 dB) a stretch of a song counts as silence. */
 const SILENCE_PEAK = 0.003;
 

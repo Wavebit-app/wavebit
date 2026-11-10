@@ -3,11 +3,13 @@ import { test } from 'node:test';
 import {
   BAND_HZ,
   BAND_LIMIT_DB,
+  bandKind,
   EQ_PRESETS,
   FLAT_BANDS,
   isSilent,
   preampGain,
   presetFor,
+  soundTargets,
   stereoMatrix,
 } from './audioEffects.ts';
 
@@ -59,4 +61,54 @@ test('silence is a peak below the threshold, anywhere in the block', () => {
   assert.equal(isSilent([0, 0.001, -0.002]), true);
   assert.equal(isSilent([0, 0.2, 0]), false);
   assert.equal(isSilent([0, -0.2, 0]), false);
+});
+
+test('off, the equalizer and its balance pass the sound untouched', () => {
+  const to = soundTargets({
+    equalizer: false,
+    bands: [6, 4, 0, 0, 0, 3, 5],
+    balance: -1,
+    spatial: false,
+  });
+  assert.deepEqual(to.gains, FLAT_BANDS);
+  assert.equal(to.preamp, 1);
+  assert.deepEqual(to.matrix, stereoMatrix(false, 0));
+});
+
+test('on, the bands are the gains and the preamp takes back the boost', () => {
+  const bands = [6, 4, 0, 0, 0, 3, 5];
+  const to = soundTargets({
+    equalizer: true,
+    bands,
+    balance: 0.5,
+    spatial: false,
+  });
+  assert.deepEqual(to.gains, bands);
+  assert.equal(to.preamp, preampGain(bands));
+  assert.deepEqual(to.matrix, stereoMatrix(false, 0.5));
+});
+
+test('spatial audio stays on with the equalizer off', () => {
+  const to = soundTargets({
+    equalizer: false,
+    bands: FLAT_BANDS,
+    balance: 0,
+    spatial: true,
+  });
+  assert.deepEqual(to.matrix, stereoMatrix(true, 0));
+});
+
+test('a shelf at each end, bells between', () => {
+  assert.deepEqual(
+    BAND_HZ.map((_, i) => bandKind(i)),
+    [
+      'lowshelf',
+      'peaking',
+      'peaking',
+      'peaking',
+      'peaking',
+      'peaking',
+      'highshelf',
+    ],
+  );
 });

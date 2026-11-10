@@ -103,6 +103,7 @@ function RailArt({
   name,
   active = false,
   playing,
+  round = false,
   onPress,
   onContextMenu,
   children,
@@ -114,6 +115,8 @@ function RailArt({
   active?: boolean;
   /** Set while this is what's playing. */
   playing?: { paused: boolean };
+  /** A round picture (an artist) gets a round overlay. */
+  round?: boolean;
   onPress: () => void;
   onContextMenu?: MouseEventHandler<HTMLElement>;
   children: ReactNode;
@@ -133,7 +136,9 @@ function RailArt({
         >
           {children}
           {playing && (
-            <span className="absolute inset-1 grid place-items-center rounded-md bg-black/50">
+            <span
+              className={`absolute inset-1 grid place-items-center bg-black/50 ${round ? 'rounded-full' : 'rounded-md'}`}
+            >
               <PlayingBars paused={playing.paused} className="text-white" />
             </span>
           )}
@@ -293,6 +298,7 @@ function ArtistRow({
         name={artist.name}
         active={active}
         playing={current ? { paused } : undefined}
+        round
         onPress={() => nav.go(target)}
       >
         <Artwork
@@ -383,7 +389,7 @@ export function SidebarLists({ rail }: { rail: boolean }) {
               <ArtistRow
                 key={artist.name}
                 artist={artist}
-                current={artist.name.toLowerCase() === playingArtist}
+                current={artist.name.trim().toLowerCase() === playingArtist}
                 paused={paused}
                 rail={rail}
               />
