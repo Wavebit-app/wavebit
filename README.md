@@ -68,10 +68,9 @@ Your files, your Spotify library and YouTube Music, side by side.
 - **Full-screen player**, system tray controls and keyboard shortcuts.
 - **Updates itself** and shows you what's new.
 
-      </td>
-
-    </tr>
-  </table>
+</td>
+</tr>
+</table>
 
 </div>
 
