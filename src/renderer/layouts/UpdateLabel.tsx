@@ -5,8 +5,15 @@ import { setUi } from '../app/ui';
 import { WaveRing } from '../design/WaveRing';
 import { useUpdateStatus } from '../lib/queries';
 
-const BASE = 'no-drag h-7 gap-1.5 px-2.5 text-[0.8667rem] whitespace-nowrap';
-const SOFT = `${BASE} bg-accent-soft font-semibold text-accent`;
+/** A label, not a button: no fill at rest, on hover or pressed, only the icon and the words. */
+const BASE =
+  'no-drag h-7 min-w-0 gap-1.5 px-1.5 text-[0.8667rem] whitespace-nowrap [--button-bg-hover:transparent] [--button-bg-pressed:transparent]';
+const LABEL = `${BASE} font-medium text-foreground hover:text-accent-soft-foreground`;
+/**
+ * The two that need the listener, in the accent's text colour (which is ink
+ * for amber in light, DESIGN.md › Contrast), still with no fill.
+ */
+const NEEDS_YOU = `${BASE} font-semibold text-accent-soft-foreground underline-offset-4 hover:underline`;
 const ICON = 14;
 
 const openAbout = (focus: string) => {
@@ -15,8 +22,9 @@ const openAbout = (focus: string) => {
 };
 
 /**
- * DESIGN.md › Title bar: an update on its way, ready, or just installed. It
- * sits first among the connect labels and shows nothing the rest of the time.
+ * DESIGN.md › Title bar: an update on its way, ready, or just installed, as a
+ * plain label (icon and words, no fill) that still takes a press. It sits first
+ * among the connect labels and shows nothing the rest of the time.
  */
 export function UpdateLabel() {
   const status = useUpdateStatus().data;
@@ -29,7 +37,7 @@ export function UpdateLabel() {
       <Button
         variant="ghost"
         size="sm"
-        className={`${BASE} font-medium tabular-nums`}
+        className={`${LABEL} tabular-nums`}
         onPress={() => openAbout('checkUpdates')}
       >
         <span className="relative block size-[18px]" aria-hidden>
@@ -42,9 +50,9 @@ export function UpdateLabel() {
   if (state === 'downloaded')
     return (
       <Button
-        variant="primary"
+        variant="ghost"
         size="sm"
-        className={`${BASE} font-semibold`}
+        className={NEEDS_YOU}
         onPress={() => void updates.install()}
       >
         <RotateCw size={ICON} strokeWidth={2.5} aria-hidden />
@@ -56,7 +64,7 @@ export function UpdateLabel() {
     return (
       <div
         role="status"
-        className={`${BASE} flex items-center rounded-md bg-accent-soft font-medium`}
+        className={`${BASE} flex items-center font-medium text-muted`}
       >
         <Spinner size="sm" color="current" className="text-accent" />
         Restarting…
@@ -68,7 +76,7 @@ export function UpdateLabel() {
       <Button
         variant="ghost"
         size="sm"
-        className={SOFT}
+        className={NEEDS_YOU}
         onPress={() => void updates.open('releases')}
       >
         <Download size={ICON} strokeWidth={2.5} aria-hidden />
@@ -81,7 +89,7 @@ export function UpdateLabel() {
       <Button
         variant="ghost"
         size="sm"
-        className={SOFT}
+        className={LABEL}
         onPress={() => {
           openAbout('whatsNew');
           void updates.markSeen();
