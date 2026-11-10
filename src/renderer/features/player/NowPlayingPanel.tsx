@@ -264,7 +264,7 @@ function AboutCard({ track }: { track: Playable }) {
   return (
     <section
       aria-label="About the artist"
-      className="shrink-0 overflow-hidden rounded-md bg-surface"
+      className="shrink-0 overflow-hidden rounded-md bg-foreground/5"
     >
       <div className="relative h-[190px]">
         <Artwork
@@ -312,7 +312,7 @@ function NextCard() {
   return (
     <section
       aria-label="Next in queue"
-      className="shrink-0 rounded-md bg-surface py-2 pr-2 pl-4"
+      className="shrink-0 rounded-md bg-foreground/5 py-2 pr-2 pl-4"
     >
       <div className="flex h-8 items-center">
         <h3 className="flex-1 text-sm font-semibold">Next in queue</h3>
@@ -354,7 +354,7 @@ function NextCard() {
  * with an expand button to its own full view.
  */
 export function NowPlayingPanel({
-  className = 'w-[var(--drawer-width,360px)]',
+  className = 'w-[var(--drawer-width,360px)] rounded-panel bg-surface',
 }: {
   className?: string;
 }) {
@@ -362,7 +362,7 @@ export function NowPlayingPanel({
   return (
     <aside
       aria-label="Now playing"
-      className={`flex ${className} shrink-0 flex-col overflow-hidden bg-canvas`}
+      className={`flex ${className} shrink-0 flex-col overflow-hidden`}
     >
       <div data-video-scroll className="flex-1 overflow-y-auto">
         {track ? (

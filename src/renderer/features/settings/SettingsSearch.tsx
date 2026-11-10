@@ -13,14 +13,7 @@ import {
  * `children`. Choosing a result opens its section, scrolls to the setting and
  * tints it for a moment.
  */
-export function SettingsSearch({
-  onPage = false,
-  children,
-}: {
-  /** On the page's `surface` the field is `sunken`; in the sidebar's `canvas`, `surface`. */
-  onPage?: boolean;
-  children: ReactNode;
-}) {
+export function SettingsSearch({ children }: { children: ReactNode }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
   const results = searchSettings(query);
@@ -55,7 +48,7 @@ export function SettingsSearch({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <label
-        className={`no-drag flex h-9 shrink-0 items-center gap-2 rounded-md pr-1 pl-2.5 text-muted ring-1 ring-[var(--field-border)] focus-within:ring-2 focus-within:ring-accent ${onPage ? 'bg-sunken' : 'bg-surface'}`}
+        className={`no-drag flex h-9 shrink-0 items-center gap-2 rounded-md pr-1 pl-2.5 text-muted ring-1 ring-[var(--field-border)] focus-within:ring-2 focus-within:ring-accent bg-sunken`}
       >
         <Search size={16} aria-hidden className="shrink-0" />
         <input

@@ -6,6 +6,8 @@ export const RAIL = 72;
 export const MIN_WORKSPACE = 480;
 /** The player bar's three groups fit from here; the sidebar takes room from it. */
 const MIN_PLAYER_BAR = 1000;
+/** The two 8px gaps between the sidebar, the page and the right panel. */
+export const GUTTERS = 16;
 
 export interface ColumnWidths {
   sidebar: number;
@@ -21,8 +23,8 @@ export function sidebarMax(window: number, drawer: number): number {
     SIDEBAR.min,
     Math.min(
       SIDEBAR.max,
-      Math.max(SIDEBAR.initial, window - MIN_PLAYER_BAR),
-      window - drawer - MIN_WORKSPACE,
+      Math.max(SIDEBAR.initial, window - GUTTERS - MIN_PLAYER_BAR),
+      window - GUTTERS - drawer - MIN_WORKSPACE,
     ),
   );
 }
@@ -31,7 +33,7 @@ export function sidebarMax(window: number, drawer: number): number {
 export function drawerMax(window: number, sidebar: number): number {
   return Math.max(
     DRAWER.min,
-    Math.min(DRAWER.max, window - sidebar - MIN_WORKSPACE),
+    Math.min(DRAWER.max, window - GUTTERS - sidebar - MIN_WORKSPACE),
   );
 }
 

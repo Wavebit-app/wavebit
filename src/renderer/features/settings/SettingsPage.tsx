@@ -634,7 +634,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
         )}
         {/* The rail and the tab bar have no room for the field, so it sits on the page. */}
         {compact || size === 'medium' || collapsed ? (
-          <SettingsSearch onPage>
+          <SettingsSearch>
             <div className="mt-6 flex flex-col">{content}</div>
           </SettingsSearch>
         ) : (

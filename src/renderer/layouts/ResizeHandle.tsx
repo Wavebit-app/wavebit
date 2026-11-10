@@ -67,7 +67,7 @@ export function ResizeHandle({
   };
 
   return (
-    <div className="relative z-20 w-0 shrink-0">
+    <div className="relative z-20 w-[8px] shrink-0">
       <div
         role="separator"
         aria-orientation="vertical"
@@ -99,7 +99,7 @@ export function ResizeHandle({
         }}
         onPointerUp={end}
         onPointerCancel={end}
-        className="no-drag group absolute inset-y-0 -left-1 w-2 cursor-col-resize touch-none outline-none"
+        className="no-drag group absolute inset-0 cursor-col-resize touch-none outline-none"
       >
         <span
           aria-hidden

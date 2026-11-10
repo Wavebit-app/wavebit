@@ -138,7 +138,7 @@ function Frame({ rail, children }: { rail: boolean; children: ReactNode }) {
   return (
     <nav
       aria-label="Main"
-      className={`flex shrink-0 flex-col gap-0.5 bg-canvas pt-2 pb-4 ${rail ? 'w-[72px] items-center px-0' : 'w-[var(--sidebar-width,232px)] px-3'}`}
+      className={`flex shrink-0 flex-col gap-0.5 overflow-hidden rounded-panel bg-surface pt-2 pb-4 ${rail ? 'mr-[8px] w-[72px] items-center px-0' : 'w-[var(--sidebar-width,232px)] px-3'}`}
     >
       {children}
     </nav>
