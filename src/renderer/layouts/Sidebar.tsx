@@ -13,6 +13,7 @@ import {
   SlidersHorizontal,
   Telescope,
   type LucideIcon,
+  Users,
 } from 'lucide-react';
 import type { ComponentType, ReactNode } from 'react';
 import { SpotifyMark, YouTubeMusicMark } from '../design/BrandMarks';
@@ -68,6 +69,7 @@ export const SETTINGS_SECTIONS: {
 }[] = [
   { id: 'appearance', label: 'Appearance', icon: Palette, group: 'General' },
   { id: 'playback', label: 'Playback', icon: CirclePlay, group: 'General' },
+  { id: 'party', label: 'Listen together', icon: Users, group: 'General' },
   {
     id: 'content',
     label: 'Content preferences',

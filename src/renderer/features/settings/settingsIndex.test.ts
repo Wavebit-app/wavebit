@@ -9,7 +9,7 @@ test('every id is unique', () => {
 });
 
 test('every section can be found', () => {
-  assert.equal(new Set(SETTINGS.map((s) => s.section)).size, 8);
+  assert.equal(new Set(SETTINGS.map((s) => s.section)).size, 9);
 });
 
 test('a name that starts with the query comes first', () => {

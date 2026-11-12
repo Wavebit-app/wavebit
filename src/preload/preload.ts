@@ -124,6 +124,18 @@ const api: WavebitApi = {
     openFolder: () => invoke(Channels.downloadsOpenFolder),
     deleteTrack: (id) => invoke(Channels.downloadsDeleteTrack, { id }),
   },
+  party: {
+    state: () => invoke(Channels.partyState),
+    setMe: (me) => invoke(Channels.partyMe, me),
+    create: (autoplay) => invoke(Channels.partyCreate, { autoplay }),
+    join: (text) => invoke(Channels.partyJoin, { text }),
+    leave: () => invoke(Channels.partyLeave),
+    control: (control) => invoke(Channels.partyControl, control),
+    acceptInvite: () => invoke(Channels.partyAcceptInvite),
+    declineInvite: () => invoke(Channels.partyDeclineInvite),
+    probe: () => invoke(Channels.partyProbe),
+    resync: () => invoke(Channels.partyResync),
+  },
   on(event, listener) {
     if (!EVENT_NAMES.includes(event as EventName))
       throw new Error(`Unknown event ${event}`);

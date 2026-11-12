@@ -13,6 +13,7 @@ import { OnDevice, SongArt } from '../downloads/SongArt';
 import { menuOn } from '../../design/ContextMenu';
 import { songMenu } from '../menus/menus';
 import { useSettings } from '../../lib/queries';
+import { PartyButton } from '../party/PartyBits';
 import { IconButton, SeekBar, Transport, Volume } from './controls';
 import { player, usePlayer } from './player';
 
@@ -103,6 +104,7 @@ export function PlayerBar() {
         >
           <ListMusic size={18} />
         </IconButton>
+        <PartyButton />
         {!hideVolume && <Volume />}
         <IconButton
           label="Full-screen player"
@@ -156,6 +158,7 @@ export function MiniPlayer() {
       >
         <PanelRight size={20} />
       </IconButton>
+      <PartyButton onlyInParty size={44} icon={20} />
       <IconButton
         label={playing ? 'Pause' : 'Play'}
         onPress={player.toggle}

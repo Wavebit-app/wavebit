@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="referrer" content="no-referrer" />
+    <!-- One inline script and one inline style; nothing is loaded from anywhere. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Join a wavebit party</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --canvas: #eef0f3;
+        --surface: #ffffff;
+        --ink: #14161a;
+        --muted: #5b6270;
+        --accent: #2f5bea;
+        --on-accent: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --canvas: #0b0b0d;
+          --surface: #131316;
+          --ink: #f1f1f3;
+          --muted: #a8adb7;
+          --accent: #7f95ff;
+          --on-accent: #0d1020;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 16px;
+        box-sizing: border-box;
+        background: var(--canvas);
+        color: var(--ink);
+        font:
+          16px/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      main {
+        width: min(100%, 380px);
+        background: var(--surface);
+        border-radius: 18px;
+        padding: 28px 24px;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        text-align: center;
+      }
+      h1 {
+        margin: 0;
+        font-size: 20px;
+      }
+      #code {
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        padding-left: 0.16em;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      a {
+        color: var(--accent);
+      }
+      #open {
+        align-self: center;
+        margin-top: 4px;
+        padding: 10px 22px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--on-accent);
+        font-weight: 600;
+        text-decoration: none;
+      }
+      a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 id="title">Join a wavebit party</h1>
+      <div id="code" aria-label="Party code"></div>
+      <a id="open" hidden>Open in wavebit</a>
+      <p id="help">
+        wavebit asks before joining. If nothing opens, start wavebit, open
+        Listen together and type the code.
+      </p>
+      <p>
+        Don’t have wavebit?
+        <a href="https://github.com/Wavebit-app/wavebit/releases/latest"
+          >Download it</a
+        >.
+      </p>
+    </main>
+    <script>
+      // The code rides in the fragment, which a browser never sends to this
+      // page's host. Only six letters or digits, and an https server, get through.
+      (function () {
+        var code = (location.hash.slice(1).match(/^[A-Za-z0-9]{6}$/) || [
+          '',
+        ])[0].toUpperCase();
+        var title = document.getElementById('title');
+        if (!code) {
+          title.textContent = 'This invite link is not complete';
+          document.getElementById('help').textContent =
+            'Ask for the link again, or for the six-character party code.';
+          return;
+        }
+        var link = 'wavebit://party/' + code;
+        var server = new URLSearchParams(location.search).get('server') || '';
+        if (/^https:\/\/[a-z0-9.-]{1,190}(:\d{1,5})?$/i.test(server))
+          link += '?server=' + encodeURIComponent(server);
+        document.getElementById('code').textContent = code;
+        var open = document.getElementById('open');
+        open.href = link;
+        open.hidden = false;
+        // Try once without a press; the button stays for browsers that refuse.
+        location.href = link;
+      })();
+    </script>
+  </body>
+</html>

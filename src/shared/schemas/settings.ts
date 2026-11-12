@@ -126,6 +126,22 @@ export const SettingsSchema = z
     downloadEmbedLyrics: z.boolean(),
     downloadSkipOwned: z.boolean(),
     downloadSyncLists: z.boolean(),
+    /** Off hides Listen together everywhere, and the party server is never contacted. */
+    partyEnabled: z.boolean(),
+    /** A song picked in a party plays for everyone at once, or joins the party's queue. */
+    partyPick: z.enum(['everyone', 'queue']),
+    /** Plays this device earlier (above zero) or later than the party, for speakers that lag. */
+    partyDelayMs: z.number().int().min(-500).max(500),
+    /** An illustration behind the party's code in the drawer. */
+    partyBanner: z.boolean(),
+    /** Listen together: the name others see. Empty uses the account's name. */
+    partyName: z.string().max(80),
+    partyShareAvatar: z.boolean(),
+    partyShowPing: z.boolean(),
+    /** A short notice when someone joins or leaves. */
+    partyNotices: z.boolean(),
+    /** Empty is BitChord's server. Read through the Rust module, which only accepts an https origin. */
+    partyServer: z.string().max(200),
     /** Spotify playlists added from a link. Only the main process writes these. */
     importedPlaylists: z.array(ImportedPlaylistSchema).max(200),
   })
@@ -211,5 +227,14 @@ export const DEFAULT_SETTINGS: Settings = {
   downloadEmbedLyrics: true,
   downloadSkipOwned: true,
   downloadSyncLists: false,
+  partyEnabled: true,
+  partyPick: 'everyone',
+  partyDelayMs: 0,
+  partyBanner: true,
+  partyName: '',
+  partyShareAvatar: true,
+  partyShowPing: true,
+  partyNotices: true,
+  partyServer: '',
   importedPlaylists: [],
 };

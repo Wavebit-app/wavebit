@@ -521,6 +521,22 @@ Opened from the player bar's expand button, a click on its artwork, or a tap on 
 - **Expand icons:** the top section opens the full-screen player, Lyrics the full-screen lyrics, About the artist's page (the library's for a file), Next in queue the Up next view. Up next and Lyrics have a Back button and keep a playing video at the top of the column.
 - **Compact:** the drawer fills the window and the tab bar and mini player step aside.
 
+### Listen together
+
+`features/party/`. Up to five devices hear the same song at the same moment, on BitChord's party server (or one named in Settings). Settings › Listen together has a switch that turns all of it off: no icon, no drawer, no contact with the server.
+
+- **Title bar:** outside a party, one Users icon just before the account circles, because the player bar is hidden until a song has played. In a party it gives way to the ping (a pill on `surface`: a dot and the round trip in ms; green under 150, amber to 400, red beyond; "Syncing" before the first measurement, "Reconnecting…" in `warning` when the connection drops) and the listeners as overlapping 32px circles, host first, the rest folded into a count past four. All of them open the drawer.
+- **The host** wears a 2px `success` ring with a 2px gap. No crown. _Why: the owner asked for a ring. A ring is colour alone, so the word Host is in the drawer's list, the hover card and the accessible name._
+- **Player bar, mini player, full-screen player:** the Users icon beside Queue. In a party it is `accent` with the number listening (you included) beside it.
+- **The drawer** (`PartyPanel.tsx`) is a fourth face of the right-hand column, built like Now playing. Top to bottom: the video, Canvas or cover as Now playing's top section but 260px tall, so the code stays on screen in a short window, with Back to Now playing, Hide or Show video and Close over it; the banner; then cards on `ink` at 5%: Listening, the party's switches, Next in the party. With nothing playing there is only the header row.
+- **The banner:** an illustration from `features/party/banners/` behind the party's code (28px, 700, wide tracking), the status line, the listeners' circles and the party's actions, under 60% black so white text holds AA on any image, as the Lyrics card treats its art. The image is picked from the party's code, so everyone in a party sees the same one. With Banner art off, or no image shipped, it is a flat `accent-soft` block. _Why an exception to flat: it is artwork, and the owner asked for it. Only art wavebit may ship goes in that folder._
+- **Actions are bare icons** (Page actions), each with a tooltip: Copy code, Copy invite link, Resync, Leave (a door, `danger` on the flat block), Remove a listener (host), Start a party and Join (30px, `accent`). The switches stay switches: Only I control the music (host), AutoPlay (anyone in an open party), and Party size as minus, the number, plus (host, 2 to 10).
+- **Before a party:** the banner carries the headline; then Start a party, Join a party (a field for the code or a pasted link) and who you join as.
+- **An invite from a link** never joins by itself: the banner shows the code, whose party it is and who is in it, with Don't join and Join. A line says joining shows them your name and picture and starts their music here; an invite on another server says so in `warning-soft`.
+- **A locked party** (the host's switch): a listener sees a `warning-soft` line naming the host, with Leave. Their Play and Pause are their own; anything else says who controls the music.
+- **Elsewhere:** Now playing gets a strip under its top section (the listeners, "In a party · CODE", a chevron) that opens the drawer. The queue is headed "Party queue" with how many share it and how full it is (25 songs).
+- **Rules** (kept by the server unless noted): one party, one song; a picked song plays for everyone or joins the queue (the listener's choice in Settings); volume, equaliser, lyrics and hiding the video are never shared; speed, crossfade and skip silence are off while in a party; the sleep timer pauses only your device. A listener the host removed can't rejoin that party for a day; wavebit keeps that door shut itself, since the server doesn't.
+
 ### Queue
 
 - **Desktop:** a 360px panel (see Layout › Panels) docked at the right of the workspace, above the player bar; the workspace narrows to make room, and nothing is covered.

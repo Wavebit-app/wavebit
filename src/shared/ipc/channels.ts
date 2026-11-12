@@ -94,6 +94,16 @@ export const Channels = {
   updatesSeen: 'updates:seen',
   updatesNotes: 'updates:notes',
   updatesOpen: 'updates:open',
+  partyState: 'party:state',
+  partyMe: 'party:me',
+  partyCreate: 'party:create',
+  partyJoin: 'party:join',
+  partyLeave: 'party:leave',
+  partyControl: 'party:control',
+  partyAcceptInvite: 'party:acceptInvite',
+  partyDeclineInvite: 'party:declineInvite',
+  partyProbe: 'party:probe',
+  partyResync: 'party:resync',
 } as const;
 
 /** Every event the main process may push to the renderer. */
@@ -108,6 +118,8 @@ export const Events = {
   downloadsChanged: 'downloads:changed',
   updateStatus: 'updates:statusChanged',
   leftFullScreen: 'app:leftFullScreen',
+  partyChanged: 'party:changed',
+  partyOpen: 'party:open',
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];

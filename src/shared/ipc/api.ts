@@ -66,6 +66,12 @@ import type {
   UpdatePage,
   UpdateStatus,
 } from '../schemas/updates';
+import type {
+  PartyControl,
+  PartyMe,
+  PartyProbe,
+  PartyState,
+} from '../schemas/party';
 import type { Events } from './channels';
 
 export interface AppInfo {
@@ -95,6 +101,9 @@ export interface EventPayloads {
   [Events.updateStatus]: UpdateStatus;
   /** The window left the full screen the full-screen player put it in. */
   [Events.leftFullScreen]: null;
+  [Events.partyChanged]: PartyState;
+  /** An invite link was opened: show the Listen together drawer. */
+  [Events.partyOpen]: null;
 }
 
 /** What the preload exposes as `window.wavebit`. */
@@ -264,6 +273,24 @@ export interface WavebitApi {
     openFolder(): Promise<void>;
     /** Moves a downloaded song's file to the Trash, by its library track id. */
     deleteTrack(id: string): Promise<void>;
+  };
+  party: {
+    state(): Promise<PartyState>;
+    /** The account name and picture to join as; null when there is none. */
+    setMe(me: PartyMe | null): Promise<void>;
+    /** Starts a party and joins it as host. The outcome arrives as state. */
+    create(autoplay: boolean): Promise<void>;
+    /** Joins by code or pasted invite link. The outcome arrives as state. */
+    join(text: string): Promise<void>;
+    leave(): Promise<void>;
+    control(control: PartyControl): Promise<void>;
+    /** Says yes to the invite that is waiting. */
+    acceptInvite(): Promise<void>;
+    declineInvite(): Promise<void>;
+    /** Asks the party server in Settings whether it answers. */
+    probe(): Promise<PartyProbe>;
+    /** Measures the clock again and asks the server where the party is. */
+    resync(): Promise<void>;
   };
   /** Subscribes to a main-process event. Returns the unsubscribe function. */
   on<E extends keyof EventPayloads>(
