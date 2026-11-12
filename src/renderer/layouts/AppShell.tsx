@@ -15,6 +15,8 @@ import { MiniPlayer, PlayerBar } from '../features/player/PlayerBar';
 import { LyricsPanel } from '../features/lyrics/LyricsPanel';
 import { NowPlayingPanel } from '../features/player/NowPlayingPanel';
 import { QueuePanel } from '../features/player/QueuePanel';
+import { PartyPanel } from '../features/party/PartyPanel';
+import { usePartyBridge } from '../features/party/usePartyBridge';
 import { useTrayBridge } from '../features/player/useTrayBridge';
 import { useUpdateSettings, useUpdateStatus } from '../lib/queries';
 import { useSizeClass } from '../lib/useBreakpoint';
@@ -33,6 +35,7 @@ const DRAWERS = {
   now: NowPlayingPanel,
   queue: QueuePanel,
   lyrics: LyricsPanel,
+  party: PartyPanel,
 };
 
 /** DESIGN.md › Layout: title bar, sidebar or rail, workspace, right panel and player bar. */
@@ -49,9 +52,14 @@ export function AppShell({
   const { route } = useNav();
   const panel = useUi((s) => s.panel);
   const fullPlayer = useUi((s) => s.fullPlayer);
-  const Drawer = panel ? DRAWERS[panel] : null;
+  // Listen together switched off in Settings has no drawer.
+  const Drawer =
+    panel && (panel !== 'party' || settings.partyEnabled)
+      ? DRAWERS[panel]
+      : null;
   const [shortcuts, setShortcuts] = useState(false);
   useTrayBridge(() => update.mutate({ closeToTray: !settings.closeToTray }));
+  usePartyBridge();
   const scroller = useRef<HTMLElement>(null);
 
   const updateReady = useUpdateStatus().data?.state === 'downloaded';

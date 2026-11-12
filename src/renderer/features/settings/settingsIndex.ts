@@ -1,6 +1,7 @@
 /** A section of Settings; `router.ts` has the same list as a route. */
 type Section =
   | 'appearance'
+  | 'party'
   | 'spotify'
   | 'youtube'
   | 'library'
@@ -25,6 +26,7 @@ export const SECTION_TITLES: Record<Section, string> = {
   youtube: 'YouTube Music',
   library: 'Library',
   playback: 'Playback',
+  party: 'Listen together',
   content: 'Content preferences',
   downloads: 'Downloads',
   about: 'About',
@@ -198,6 +200,70 @@ export const SETTINGS: SettingEntry[] = [
       'Embed lyrics',
       'Saves the words inside each song, from LRCLIB.',
       'words tags',
+    ],
+  ]),
+  ...group('party', 'Listen together', [
+    [
+      'partyEnabled',
+      'Listen together',
+      'Off hides it everywhere. wavebit then never contacts the party server, and invite links only say it is off.',
+      'party jam shared session turn on off disable enable',
+    ],
+  ]),
+  ...group('party', 'In a party', [
+    [
+      'partyPick',
+      'When I pick a song',
+      'Play it for everyone at once, or put it in the party’s queue.',
+      'listen together choose play queue add rules',
+    ],
+    [
+      'partyDelayMs',
+      'Audio delay',
+      'For Bluetooth speakers, which play late. Moves your device earlier or later than the party.',
+      'listen together sync offset latency bluetooth lag milliseconds',
+    ],
+  ]),
+  ...group('party', 'You', [
+    [
+      'partyName',
+      'Name in parties',
+      'Leave empty to use your YouTube Music or Spotify name.',
+      'listen together nickname display name jam',
+    ],
+    [
+      'partyShareAvatar',
+      'Share my picture',
+      'Others see your account picture. Off shows your initial.',
+      'listen together avatar photo privacy',
+    ],
+  ]),
+  ...group('party', 'In the app', [
+    [
+      'partyShowPing',
+      'Ping in the title bar',
+      'Shows the round trip to the party server beside the listeners.',
+      'listen together latency ms connection sync',
+    ],
+    [
+      'partyBanner',
+      'Banner art',
+      'An illustration behind the party’s code. Off leaves a flat block.',
+      'listen together picture image backdrop drawer',
+    ],
+    [
+      'partyNotices',
+      'Say when someone joins or leaves',
+      'A short notice at the bottom of the window.',
+      'listen together toast notification members',
+    ],
+  ]),
+  ...group('party', 'Party server', [
+    [
+      'partyServer',
+      'Server address',
+      'Where your parties are started. An invite on another server asks first.',
+      'listen together bitchord host url custom self-hosted',
     ],
   ]),
   ...group('downloads', 'Your library', [

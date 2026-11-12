@@ -18,6 +18,9 @@ import { songMenu } from '../menus/menus';
 import { IconButton } from './controls';
 import { usePlayHistory, useSettings } from '../../lib/queries';
 import { fromHistory, player, usePlayer, type Playable } from './player';
+import { count } from '../../lib/format';
+import { controlsLocked } from '../party/partyRules';
+import { useParty } from '../party/store';
 import { VideoStrip } from './VideoSlot';
 
 const HISTORY_LIMIT = 25;
@@ -171,6 +174,12 @@ export function QueuePanel({
   const autoplayStart = usePlayer((s) => s.autoplayStart);
   const paused = usePlayer((s) => !s.playing);
   usePlayer((s) => s.shuffle);
+  // In a party the queue is everyone's: how many share it, and how full it is.
+  const party = useParty((s) =>
+    s.code
+      ? `Shared with ${count(s.members.length - 1, 'other')} · ${Math.max(0, s.queue.items.length - 1)} of 25 songs${controlsLocked(s) ? ' · the host controls it' : ''}`
+      : null,
+  );
   const [over, setOver] = useState<number | null>(null);
   const current = queue[index];
   const showHistory = useSettings().data?.showQueueHistory ?? false;
@@ -221,7 +230,16 @@ export function QueuePanel({
           >
             <ArrowLeft size={18} />
           </IconButton>
-          <h2 className="flex-1 text-xl font-semibold">Up next</h2>
+          <h2 className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-xl font-semibold">
+              {party ? 'Party queue' : 'Up next'}
+            </span>
+            {party && (
+              <span className="truncate text-[0.8667rem] font-normal text-muted tabular-nums">
+                {party}
+              </span>
+            )}
+          </h2>
           <IconButton
             label={autoplay ? 'AutoPlay is on' : 'AutoPlay is off'}
             onPress={player.toggleAutoplay}

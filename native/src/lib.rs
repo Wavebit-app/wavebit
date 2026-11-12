@@ -4,6 +4,7 @@
 mod cache;
 mod library;
 mod matcher;
+mod party;
 mod tags;
 
 use napi::{Error, Status};

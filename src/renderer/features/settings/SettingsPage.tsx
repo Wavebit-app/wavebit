@@ -29,6 +29,7 @@ import { SETTINGS_SECTIONS } from '../../layouts/Sidebar';
 import { FolderList } from '../library/FolderList';
 import { ConnectSpotify } from '../spotify/ConnectSpotify';
 import { DownloadsSection } from './DownloadsSection';
+import { PartySection } from './PartySection';
 import { UpdatesSection } from './UpdatesSection';
 import { presetFor } from '../player/audioEffects';
 import { player, usePlayer } from '../player/player';
@@ -575,6 +576,8 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
     youtube: 'Sign in to YouTube through your browser.',
     library: 'Where wavebit finds your music.',
     playback: 'How songs play.',
+    party:
+      'Your name in parties, what the title bar shows, and the server parties run on.',
     content: 'What shows up, and how music videos play.',
     downloads: 'Where songs are saved and what goes in them.',
     about: 'The version and what wavebit is built with.',
@@ -611,6 +614,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
       {section === 'youtube' && <YouTubeSection />}
       {section === 'library' && <LibrarySection />}
       {section === 'playback' && <Playback />}
+      {section === 'party' && <PartySection />}
       {section === 'content' && <ContentSection />}
       {section === 'downloads' && <DownloadsSection />}
       {section === 'about' && <About />}

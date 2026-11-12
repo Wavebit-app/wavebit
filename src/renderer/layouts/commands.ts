@@ -114,6 +114,15 @@ export function menus(
             keys: 'Ctrl ,',
             run: () => nav.go({ name: 'settings', section: 'appearance' }),
           },
+          ...(settings.partyEnabled
+            ? [
+                {
+                  id: 'party',
+                  label: 'Listen together',
+                  run: () => setUi({ panel: 'party', fullPlayer: false }),
+                },
+              ]
+            : []),
           {
             id: 'fold',
             label: settings.sidebarCollapsed

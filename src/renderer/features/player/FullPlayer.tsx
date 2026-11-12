@@ -18,6 +18,7 @@ import { useSettings } from '../../lib/queries';
 import { useMotion } from '../../lib/useTheme';
 import { useSizeClass } from '../../lib/useBreakpoint';
 import { Lyrics } from '../lyrics/Lyrics';
+import { PartyButton } from '../party/PartyBits';
 import { IconButton, SeekBar, Transport, Volume } from './controls';
 import { SpotifyCanvas } from './Canvas';
 import { usePlayer, useStreaming } from './player';
@@ -130,6 +131,7 @@ export function FullPlayer() {
         >
           <ListMusic size={18} />
         </IconButton>
+        <PartyButton size={40} onOpen={close} />
         <Volume width={roomy ? 160 : 100} />
         <span className="flex-1" />
         {streaming && (

@@ -199,6 +199,36 @@ function set(patch: Partial<PlayerState>): void {
   for (const l of listeners) l();
 }
 
+/**
+ * Listen together's way in (features/party/partySync.ts). The player tells it
+ * what the listener did; what the party does comes back through `partyPlayer`,
+ * which reports nothing, so the two can't echo each other.
+ */
+export interface PartyDoors {
+  inParty(): boolean;
+  /** The listener did something, or the queue moved on by itself. */
+  intent(): void;
+  /** True when a Play was held back for the party's scheduled start. */
+  deferPlay(): boolean;
+  /**
+   * True when Play or Pause was this listener's alone: in a party they may
+   * not control, or coming back from a pause of their own.
+   */
+  aloneToggle(wantPlay: boolean): boolean;
+  /** Pauses this device only (the sleep timer); the party carries on. */
+  pauseAlone(): void;
+  /** True when the party took the listener's action instead of the player (refused, or queued). */
+  intercept(name: string, args: readonly unknown[]): boolean;
+  /** Whether this device is the one that adds AutoPlay's songs. */
+  maySupply(): boolean;
+}
+let doors: PartyDoors | null = null;
+export function setPartyDoors(next: PartyDoors | null): void {
+  doors = next;
+}
+/** In a party everyone plays at normal speed, or nobody stays in time. */
+const rate = () => (doors?.inParty() ? 1 : options.speed);
+
 // --- Two decks -----------------------------------------------------------------
 //
 // BitChord's crossfade, ported: two players, the incoming song loaded on the
@@ -275,13 +305,14 @@ function endSilenceSkip(): void {
   silentFor = 0;
   if (!skippingSilence) return;
   skippingSilence = false;
-  A().el.playbackRate = options.speed;
+  A().el.playbackRate = rate();
 }
 
 function watchSilence(): void {
   const analyser = A().analyser;
   if (
     !options.skipSilence ||
+    doors?.inParty() ||
     !analyser ||
     streaming ||
     !state.playing ||
@@ -305,10 +336,10 @@ function watchSilence(): void {
 /** The chosen speed on both decks and YouTube's player. */
 function applySpeed(): void {
   for (const deck of decks) {
-    deck.el.defaultPlaybackRate = options.speed;
-    if (deck !== A() || !skippingSilence) deck.el.playbackRate = options.speed;
+    deck.el.defaultPlaybackRate = rate();
+    if (deck !== A() || !skippingSilence) deck.el.playbackRate = rate();
   }
-  if (streaming) youtubeEmbed.setSpeed(options.speed);
+  if (streaming) youtubeEmbed.setSpeed(rate());
 }
 
 // --- Sleep timer -----------------------------------------------------------------
@@ -325,11 +356,17 @@ function pauseAll(): void {
   A().el.pause();
 }
 
+/** The sleep timer's pause: in a party it is this device's alone. */
+function sleepPause(): void {
+  if (doors?.inParty()) doors.pauseAlone();
+  else pauseAll();
+}
+
 /** True if the timer was waiting for this song to end; the music stops here. */
 function sleepAtSongEnd(): boolean {
   if (state.sleep !== 'song') return false;
   set({ sleep: 'off', sleepAt: null });
-  pauseAll();
+  sleepPause();
   return true;
 }
 
@@ -387,7 +424,8 @@ function shuffled(length: number, first: number): number[] {
 }
 
 function persist(): void {
-  if (!remember) return;
+  // The party's queue isn't yours to come back to.
+  if (!remember || doors?.inParty()) return;
   try {
     localStorage.setItem(
       QUEUE_KEY,
@@ -480,6 +518,8 @@ function remaining(): number {
  */
 async function extendQueue(): Promise<void> {
   if (!state.autoplay || state.repeat !== 'off' || extending) return;
+  // One device adds AutoPlay's songs for a whole party, or the same station goes out twice.
+  if (doors && !doors.maySupply()) return;
   if (state.queue.length === 0 || remaining() >= 3) return;
   const last = state.queue.at(-1)!;
   const seedKey = last.stream?.videoId ?? `${last.title}|${last.artist}`;
@@ -527,6 +567,7 @@ async function extendQueue(): Promise<void> {
       autoplayStart: state.autoplayStart ?? start,
     });
     persist();
+    doors?.intent();
   } catch {
     // No radio this time; the queue simply ends.
   } finally {
@@ -605,7 +646,7 @@ function beginBlend(): void {
       const remaining = (outgoing.el.duration || 0) - outgoing.el.currentTime;
       const length = Math.max(
         0.5,
-        Math.min(options.crossfade, remaining / options.speed),
+        Math.min(options.crossfade, remaining / rate()),
       );
       const now = ctx.currentTime;
       outgoing.fade!.gain.cancelScheduledValues(now);
@@ -647,9 +688,25 @@ let streaming = false;
 /** Bumped on every load, so a slow YouTube search can't start a song that was skipped. */
 let streamToken = 0;
 let endedFor: string | null = null;
+/** When YouTube's player last reported its time, and how many reports in a row have moved on. */
+let streamTimeAt = 0;
+let streamTicks = 0;
+/**
+ * For a moment after a new video or a seek is asked for, YouTube still
+ * reports where it was. Until it reports the place asked for (or this long
+ * passes), those reports are dropped.
+ */
+const ASK_HOLD_MS = 3_000;
+let askedAt = 0;
+let askedPlace = 0;
+function asked(seconds: number): void {
+  askedAt = performance.now();
+  askedPlace = seconds;
+  streamTicks = 0;
+}
 
 function skipSoon(token: number): void {
-  setTimeout(() => token === streamToken && player.next(), 1500);
+  setTimeout(() => token === streamToken && advance(), 1500);
 }
 
 /**
@@ -679,6 +736,7 @@ async function loadStream(
 ): Promise<void> {
   const token = ++streamToken;
   streaming = true;
+  asked(at);
   // Until the new video is asked for, the embed still reports the last one's time.
   loadedId = null;
   endedFor = null;
@@ -803,7 +861,7 @@ youtubeEmbed.on({
       persist();
     }
     // YouTube's player goes back to normal speed for each new video.
-    if (playing) youtubeEmbed.setSpeed(options.speed);
+    if (playing) youtubeEmbed.setSpeed(rate());
   },
   // Some YouTube Music rows name no artist; the player knows the channel.
   author: (videoId, name) => {
@@ -815,6 +873,15 @@ youtubeEmbed.on({
   },
   time: (position, duration) => {
     if (!streaming) return;
+    if (
+      performance.now() - askedAt < ASK_HOLD_MS &&
+      Math.abs(position - askedPlace) > 3
+    )
+      return;
+    askedAt = 0;
+    streamTimeAt = performance.now();
+    // A report that hasn't moved on is a video still buffering.
+    streamTicks = position > state.position ? streamTicks + 1 : 0;
     set({ position, ...(duration > 0 && { duration }) });
     notePlace();
     countListening();
@@ -827,13 +894,16 @@ youtubeEmbed.on({
     const id = youtubeEmbed.current();
     // YouTube reports the end twice (state change and info); act once.
     if (!streaming || endedFor === id) return;
+    // The second report can land after the next video was asked for: it is
+    // the last song's end, not this one's.
+    if (askedAt !== 0 && performance.now() - askedAt < ASK_HOLD_MS) return;
     endedFor = id;
     if (sleepAtSongEnd()) return;
     if (state.repeat === 'one') {
       endedFor = null;
       youtubeEmbed.seek(0);
       youtubeEmbed.play();
-    } else player.next();
+    } else advance();
   },
   error: () => {
     if (!streaming) return;
@@ -870,6 +940,29 @@ function load(track: Playable, autoplay: boolean, at = 0): void {
     prefetchNext();
   }
   persist();
+}
+
+/** Plays the current song from where it is. */
+function resume(): void {
+  if (streaming) {
+    const track = player.current();
+    const loaded = youtubeEmbed.current();
+    // A restored queue hasn't asked YouTube for anything yet.
+    if (track && (!loaded || loaded !== track.stream?.videoId))
+      void loadStream(track, true, state.position);
+    // The button answers at once; the embed's own state report confirms it.
+    else {
+      youtubeEmbed.play();
+      set({ playing: true });
+    }
+    return;
+  }
+  settleBlend();
+  graph();
+  if (A().trackId) applyLevel(A(), A().trackId!);
+  void A()
+    .el.play()
+    .catch(() => {});
 }
 
 function startList(
@@ -911,7 +1004,7 @@ export const player = {
     set({ sleep: choice, sleepAt: Date.now() + ms });
     sleepTimer = setTimeout(() => {
       set({ sleep: 'off', sleepAt: null });
-      pauseAll();
+      sleepPause();
     }, ms);
   },
   /**
@@ -930,29 +1023,13 @@ export const player = {
   },
   toggle(): void {
     if (state.index < 0) return;
-    if (streaming) {
-      const track = player.current();
-      const loaded = youtubeEmbed.current();
-      // A restored queue hasn't asked YouTube for anything yet.
-      if (track && (!loaded || loaded !== track.stream?.videoId))
-        void loadStream(track, true, state.position);
-      // The button answers at once; the embed's own state report confirms it.
-      else if (state.playing) {
-        youtubeEmbed.pause();
-        set({ playing: false });
-      } else {
-        youtubeEmbed.play();
-        set({ playing: true });
-      }
-      return;
-    }
-    settleBlend();
-    const el = A().el;
-    if (el.paused) {
-      graph();
-      if (A().trackId) applyLevel(A(), A().trackId!);
-      void el.play().catch(() => {});
-    } else el.pause();
+    const wantPlay = streaming ? !state.playing : A().el.paused;
+    if (doors?.aloneToggle(wantPlay)) return;
+    // In a party a Play waits for the instant everyone starts at.
+    if (wantPlay && doors?.deferPlay()) return doors.intent();
+    if (wantPlay) resume();
+    else pauseAll();
+    doors?.intent();
   },
   next(): void {
     const next = following();
@@ -986,6 +1063,7 @@ export const player = {
   seek(seconds: number): void {
     if (!Number.isFinite(seconds)) return;
     if (streaming) {
+      asked(Math.max(0, seconds));
       youtubeEmbed.seek(Math.max(0, seconds));
       set({ position: Math.max(0, seconds) });
       notePlace();
@@ -1119,6 +1197,177 @@ export const player = {
   },
 };
 
+// Each of these is the listener's own doing, or the queue moving on by itself:
+// in a party, the party hears about it.
+for (const name of [
+  'playList',
+  'shuffleList',
+  'next',
+  'previous',
+  'seek',
+  'playNext',
+  'addToQueue',
+  'removeUpcoming',
+  'removeUpNext',
+  'moveUpcoming',
+  'clearAdded',
+  'playAt',
+  'playAdded',
+  'toggleShuffle',
+] as const) {
+  const act = player[name] as (...args: never[]) => void;
+  (player[name] as unknown) = (...args: never[]) => {
+    if (byListener && doors?.intercept(name, args)) return;
+    act(...args);
+    doors?.intent();
+  };
+}
+
+/** False while the queue moves on by itself, which no party rule refuses. */
+let byListener = true;
+/** The song ended, or couldn't play: on to the next one. */
+function advance(): void {
+  byListener = false;
+  try {
+    player.next();
+  } finally {
+    byListener = true;
+  }
+}
+
+/** A song still to come, and whether AutoPlay added it. */
+export interface Upcoming {
+  track: Playable;
+  auto: boolean;
+}
+
+/** What the listener had before a party, to give back after it. */
+export interface PlayerStash {
+  queue: Playable[];
+  upNext: Playable[];
+  index: number;
+  source: string;
+  autoplayStart: number | null;
+  order: number[];
+  position: number;
+}
+
+/**
+ * The party's hands on the player. Nothing done here is reported back to the
+ * party, which is what keeps following it from looking like the listener's
+ * own doing.
+ */
+export const partyPlayer = {
+  /** Replaces the queue with the party's and plays (or waits at) `at` seconds. */
+  load(
+    list: Playable[],
+    index: number,
+    at: number,
+    play: boolean,
+    autoplayStart: number | null,
+  ): void {
+    order = [...list.keys()];
+    set({ queue: list, upNext: [], index, source: '', autoplayStart });
+    load(list[index]!, play, at);
+  },
+  /** What plays after the current song, hand-queued songs first, in play order. */
+  upcoming(): Upcoming[] {
+    const from = state.autoplayStart;
+    return [
+      ...state.upNext.map((track) => ({ track, auto: false })),
+      ...player.upcoming().map((u) => ({
+        track: u.track,
+        auto: from !== null && u.index >= from,
+      })),
+    ];
+  },
+  /** Replaces what plays after the current song. */
+  setUpcoming(list: Upcoming[]): void {
+    const head = state.queue.slice(0, state.index + 1);
+    const queue = [...head, ...list.map((u) => u.track)];
+    const auto = list.findIndex((u) => u.auto);
+    // The party's order is the order, shuffle or not.
+    order = [...queue.keys()];
+    set({
+      queue,
+      upNext: [],
+      autoplayStart: auto < 0 ? null : head.length + auto,
+    });
+  },
+  play: resume,
+  pause: pauseAll,
+  seekTo(seconds: number): void {
+    if (!streaming) {
+      settleBlend();
+      A().el.currentTime = seconds;
+      return;
+    }
+    // Before the video is asked for, the place is only written down.
+    const loaded = youtubeEmbed.current();
+    if (loaded && loaded === player.current()?.stream?.videoId)
+      youtubeEmbed.seek(seconds);
+    asked(seconds);
+    streamTimeAt = performance.now();
+    set({ position: seconds });
+  },
+  /** Where the song is right now. YouTube reports a few times a second, so the gap is counted in. */
+  positionMs(): number {
+    if (!streaming) return A().el.currentTime * 1000;
+    // Nothing is counted in until the video has reported from the place asked for.
+    const since =
+      state.playing && askedAt === 0
+        ? Math.min(500, performance.now() - streamTimeAt)
+        : 0;
+    return state.position * 1000 + since;
+  },
+  /** Playing, or on its way to. */
+  wantsPlaying: (): boolean => state.playing,
+  /** Played by YouTube's player, which takes a moment to carry on after a seek. */
+  isStream: (): boolean => streaming,
+  /** Plays the song a touch fast or slow for a moment, to close a gap without a seek. 1 ends it. */
+  setRate(speed: number): void {
+    if (streaming) youtubeEmbed.setSpeed(speed);
+    else A().el.playbackRate = speed;
+  },
+  /** Really sounding, so its position can be compared with the party's. */
+  settled(): boolean {
+    if (!state.playing) return false;
+    if (streaming) return streamTicks >= 2;
+    const el = A().el;
+    return !el.paused && !el.seeking && el.readyState >= 3;
+  },
+  /** Entering or leaving a party changes which speed applies. */
+  applyRate: applySpeed,
+  stash(): PlayerStash {
+    return {
+      queue: state.queue,
+      upNext: state.upNext,
+      index: state.index,
+      source: state.source,
+      autoplayStart: state.autoplayStart,
+      order: [...order],
+      position: partyPlayer.positionMs() / 1000,
+    };
+  },
+  /** Puts the listener's own queue back, paused where it was. */
+  restore(stash: PlayerStash | null): void {
+    pauseAll();
+    const track = stash?.queue[stash.index];
+    if (!stash || !track) return;
+    order = stash.order;
+    set({
+      queue: stash.queue,
+      upNext: stash.upNext,
+      index: stash.index,
+      source: stash.source,
+      autoplayStart: stash.autoplayStart,
+    });
+    load(track, false, stash.position);
+    // Loading a file resets its deck without a pause event.
+    set({ playing: false });
+  },
+};
+
 // Every event is filtered to the deck that is current; the other deck is either
 // idle or the song fading out.
 for (const deck of decks) {
@@ -1149,12 +1398,14 @@ for (const deck of decks) {
     const remaining = (deck.el.duration || 0) - deck.el.currentTime;
     if (
       options.crossfade > 0 &&
+      // A blend plays two songs at once; a party is in one place.
+      !doors?.inParty() &&
       !state.blending &&
       !deck.el.paused &&
       state.repeat !== 'one' &&
       state.sleep !== 'song' &&
       deck.el.duration > options.crossfade * 2 + 1 &&
-      remaining <= options.crossfade * options.speed &&
+      remaining <= options.crossfade * rate() &&
       !isStream(following()?.track)
     )
       beginBlend();
@@ -1169,7 +1420,7 @@ for (const deck of decks) {
     if (state.repeat === 'one') {
       deck.el.currentTime = 0;
       void deck.el.play();
-    } else player.next();
+    } else advance();
   });
   // A file deleted since the last scan: say so.
   deck.el.addEventListener(

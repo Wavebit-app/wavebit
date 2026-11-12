@@ -11,6 +11,7 @@ import { IconAction } from '../design/IconAction';
 import { Logo } from '../design/Logo';
 import { SearchBox } from '../features/search/SearchBox';
 import { DownloadsButton } from '../features/downloads/DownloadActions';
+import { PartyStatus } from '../features/party/PartyStatus';
 import { BREAKPOINTS, useWindowWidth } from '../lib/useBreakpoint';
 import type { Command } from './commands';
 import { ConnectLabels } from './ConnectLabels';
@@ -185,6 +186,7 @@ export function TitleBar({
         className={`flex items-center justify-end ${mac ? 'pr-3' : 'pr-[148px]'}`}
       >
         {!minimal && width < BREAKPOINTS.medium && <DownloadsButton />}
+        {connect && <PartyStatus />}
         {connect && <ConnectLabels />}
       </div>
     </header>

@@ -64,6 +64,26 @@ export declare class Library {
   clear(): void
 }
 
+/**
+ * One party at a time, on its own thread. `on_change` gets the whole state as
+ * JSON each time any of it changes.
+ */
+export declare class Party {
+  constructor(onChange: ((arg: string) => unknown))
+  /** Starts a party on `server` and joins it as host. */
+  create(server: string, who: PartyIdentity, autoplay: boolean): void
+  join(server: string, code: string, who: PartyIdentity): void
+  /**
+   * Gives the slot back. `wait_ms` above zero waits that long for it to be
+   * done, for when the app is about to quit.
+   */
+  leave(waitMs: number): void
+  /** Sends one control, as JSON with an `action`. Unknown actions are dropped. */
+  control(frame: string): void
+  /** Measures the clock again and asks the server to restate where the party is. */
+  sync(): void
+}
+
 export interface AlbumDetail {
   album: AlbumSummary
   format: string
@@ -165,6 +185,54 @@ export interface MatchInput {
 }
 
 export declare function nativeVersion(): string
+
+/** `https://host[:port]`, or null when the text isn't a server wavebit will talk to. */
+export declare function partyCleanServer(text: string): string | null
+
+/** Who this device joins as. The server can't check it; the token it mints is what counts. */
+export interface PartyIdentity {
+  userId: string
+  deviceId: string
+  displayName: string
+  avatarUrl?: string
+}
+
+export interface PartyInvite {
+  code: string
+  /** Null means whichever server this device already uses. */
+  server?: string
+}
+
+/** Reads a code or an invite link; null for anything else. */
+export declare function partyParseInvite(text: string): PartyInvite | null
+
+/** Asks `server` who is in party `code`, off the main thread. Null when it can't say. */
+export declare function partyPreview(server: string, code: string): Promise<unknown>
+
+/** Who is in a party, for someone invited to it. */
+export interface PartyPreview {
+  hostName: string
+  maxMembers: number
+  isFull: boolean
+  members: Array<PartyPreviewMember>
+}
+
+export interface PartyPreviewMember {
+  displayName: string
+  avatarUrl?: string
+  isHost: boolean
+}
+
+/** Asks `server` whether it is a party server, off the main thread. */
+export declare function partyProbe(server: string): Promise<unknown>
+
+/** Whether a party server answers, and how fast. */
+export interface PartyProbe {
+  ok: boolean
+  roundTripMs: number
+  parties?: number
+  members?: number
+}
 
 export interface ScanProgress {
   running: boolean

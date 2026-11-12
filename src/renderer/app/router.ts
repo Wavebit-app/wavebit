@@ -11,6 +11,7 @@ export type LibraryTab =
   | 'playlists';
 export type SettingsSection =
   | 'appearance'
+  | 'party'
   | 'spotify'
   | 'youtube'
   | 'library'

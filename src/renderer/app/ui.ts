@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 /** What the column at the right of the workspace shows; one at a time. */
-export type Panel = 'now' | 'queue' | 'lyrics';
+export type Panel = 'now' | 'queue' | 'lyrics' | 'party';
 
 /** App-wide overlay state: the full-screen player, the right panel and search. */
 interface UiState {

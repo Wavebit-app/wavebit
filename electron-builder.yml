@@ -24,6 +24,11 @@ extraResources:
     filter:
       - '**/*'
       - '!.stamp.json'
+# Listen together's invite links (`wavebit://party/CODE`) open the app.
+protocols:
+  - name: wavebit
+    schemes:
+      - wavebit
 # Keep in step with FusesPlugin in forge.config.mts (scripts/release-config.test.mjs).
 electronFuses:
   runAsNode: false

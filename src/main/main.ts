@@ -5,11 +5,18 @@ import { registerAppIpc } from './ipc/app';
 import { registerDownloadsIpc } from './ipc/downloads';
 import { registerLibraryIpc } from './ipc/library';
 import { registerLyricsIpc } from './ipc/lyrics';
+import { registerPartyIpc } from './ipc/party';
 import { registerSettingsIpc } from './ipc/settings';
 import { registerSpotifyIpc } from './ipc/spotify';
 import { registerUpdatesIpc } from './ipc/updates';
 import { registerYouTubeIpc } from './ipc/youtube';
 import { lib, startLibrary } from './library/library';
+import {
+  inviteIn,
+  leavePartyOnQuit,
+  openInvite,
+  startParty,
+} from './party/party';
 import {
   registerSchemes,
   serveMedia,
@@ -35,7 +42,11 @@ import {
 if (!app.isPackaged && process.env.WAVEBIT_USER_DATA)
   app.setPath('userData', process.env.WAVEBIT_USER_DATA);
 
-if (!app.requestSingleInstanceLock()) app.quit();
+// A second launch only hands its arguments (an invite link, say) to the first
+// and goes. It must start nothing itself: acting on the link too would join
+// as the same device and throw the first window out of the party.
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
 
 app.enableSandbox();
 app.setAppUserModelId('dev.wavebit.app');
@@ -45,7 +56,10 @@ hardenAllWebContents();
 let mainWindow: BrowserWindow | null = null;
 
 let quitting = false;
-app.on('before-quit', () => (quitting = true));
+app.on('before-quit', () => {
+  quitting = true;
+  leavePartyOnQuit();
+});
 
 function openWindow(): void {
   const win = createMainWindow();
@@ -61,10 +75,22 @@ function openWindow(): void {
   followWindow(win);
 }
 
-// Launching wavebit again brings back a window hidden in the tray.
-app.on('second-instance', showWindow);
+// Launching wavebit again brings back a window hidden in the tray. An invite
+// link starts wavebit a second time with the link as an argument.
+app.on('second-instance', (_event, argv) => {
+  showWindow();
+  const link = inviteIn(argv);
+  if (link) openInvite(link);
+});
+// macOS hands links over as an event instead.
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  showWindow();
+  openInvite(url);
+});
 
 void app.whenReady().then(() => {
+  if (!primary) return;
   // The app draws its own title bar and menus; no native menu bar.
   Menu.setApplicationMenu(null);
   hardenSession(session.defaultSession);
@@ -81,9 +107,15 @@ void app.whenReady().then(() => {
   registerYouTubeIpc();
   registerDownloadsIpc();
   registerUpdatesIpc();
+  registerPartyIpc();
   startLibrary();
   startDownloads();
   startUpdates((value) => (quitting = value));
+  startParty();
+  // `wavebit://party/CODE` opens wavebit. A dev build isn't an installed app, so it doesn't claim the link.
+  if (app.isPackaged) app.setAsDefaultProtocolClient('wavebit');
+  const link = inviteIn(process.argv);
+  if (link) openInvite(link);
 
   void createTray(() => mainWindow);
   openWindow();

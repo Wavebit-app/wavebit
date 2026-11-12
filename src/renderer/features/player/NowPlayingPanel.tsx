@@ -20,6 +20,7 @@ import {
 } from '../../lib/queries';
 import { songMenu } from '../menus/menus';
 import { SpotifyCanvas } from './Canvas';
+import { PartyButton, PartyStrip } from '../party/PartyBits';
 import { IconButton } from './controls';
 import { player, usePlayer, useStreaming, type Playable } from './player';
 import { VideoSlot } from './VideoSlot';
@@ -89,6 +90,7 @@ function Hero({ track }: { track: Playable }) {
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">
           {source ?? 'Now playing'}
         </span>
+        <PartyButton className="text-white!" />
         <ExpandButton
           light
           label="Open the full-screen player"
@@ -369,6 +371,7 @@ export function NowPlayingPanel({
           <div className="flex flex-col gap-3 pb-4">
             <Hero track={track} />
             <div className="flex flex-col gap-3 px-4">
+              <PartyStrip />
               <LyricsCard key={track.id} track={track} />
               <AboutCard track={track} />
               <NextCard />
