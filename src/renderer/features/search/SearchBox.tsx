@@ -1,5 +1,5 @@
 import { Button, Kbd, Spinner } from '@heroui/react';
-import { Search, X } from 'lucide-react';
+import { History, Search, X } from 'lucide-react';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { nav } from '../../app/router';
 import { searchInputId, setUi, useUi } from '../../app/ui';
@@ -25,6 +25,7 @@ import { SpotifyMark } from '../../design/BrandMarks';
 import { parseSpotifyLink } from '../../../shared/spotifyLink';
 import { spotifyRoute } from '../spotify/rowLinks';
 import { fitResults } from './budget';
+import { recentSearches, useRecentSearches } from './recentSearches';
 
 interface Result {
   key: string;
@@ -48,6 +49,8 @@ const LINK_TITLES = {
   track: 'Open this Spotify song',
 };
 
+/** Recent searches shown at first, and how many Show more adds (the sidebar's paging). */
+const RECENT_PAGE = 5;
 const MIN_REMOTE = 2;
 const REMOTE_DELAY_MS = 300;
 /** YouTube Music's sections the dropdown shows, and how many rows of each. */
@@ -68,7 +71,7 @@ const thumbnail = (url: string | null) =>
  * move, Enter opens, Esc clears. Files answer at once, YouTube Music's real
  * results (covers and artist avatars) join them when typing pauses. Spotify
  * playlists are filtered from the list already loaded, so typing never calls
- * Spotify.
+ * Spotify. With nothing typed, it offers the recent searches instead.
  */
 export function SearchBox({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
   const query = useUi((s) => s.search);
@@ -77,8 +80,12 @@ export function SearchBox({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
   const signedIn = useSignedIn();
   const playlists = usePlaylists(signedIn);
   const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(0);
+  const [active, setActive] = useState(-1);
   const box = useRef<HTMLDivElement>(null);
+  const recent = useRecentSearches();
+  const [shown, setShown] = useState(RECENT_PAGE);
+  const recentShown = recent.slice(0, shown);
+  const showRecent = open && !query.trim() && recent.length > 0;
 
   const link = useMemo(() => parseSpotifyLink(deferred), [deferred]);
 
@@ -213,8 +220,9 @@ export function SearchBox({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
     waiting,
   ]);
 
+  // Recent searches start with no row chosen, so Enter can't pick one by accident.
   useEffect(() => {
-    setActive(0);
+    setActive(deferred ? 0 : -1);
   }, [deferred]);
   // Keyboard moves keep the chosen row in view; `nearest` leaves a hovered one still.
   useEffect(() => {
@@ -230,18 +238,36 @@ export function SearchBox({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
     return () => window.removeEventListener('mousedown', close);
   }, []);
 
+  const focusInput = () => document.getElementById(searchInputId)?.focus();
   const choose = (item: Result | undefined) => {
     if (!item) return;
+    // A search counts once it led somewhere. A pasted link isn't one.
+    if (!link) recentSearches.add(deferred);
     item.open();
     setOpen(false);
   };
   const clear = () => {
     setUi({ search: '' });
-    document.getElementById(searchInputId)?.focus();
+    focusInput();
   };
+  const searchAgain = (text: string | undefined) => {
+    if (!text) return;
+    setUi({ search: text });
+    setOpen(true);
+    focusInput();
+  };
+  const rows = showRecent ? recentShown.length : items.length;
 
   return (
-    <div ref={box} className="relative w-full">
+    <div
+      ref={box}
+      className="relative w-full"
+      onBlur={(e) => {
+        // Tabbing out of the recent searches closes them.
+        if (showRecent && !box.current?.contains(e.relatedTarget))
+          setOpen(false);
+      }}
+    >
       <label
         className={`flex items-center gap-2 rounded-full bg-sunken pr-1.5 pl-3.5 text-muted ring-1 ring-[var(--field-border)] focus-within:ring-2 focus-within:ring-accent ${size === 'lg' ? 'h-12' : 'h-[38px]'}`}
       >
@@ -250,7 +276,7 @@ export function SearchBox({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
           id={searchInputId}
           type="search"
           role="combobox"
-          aria-expanded={open && !!deferred}
+          aria-expanded={showRecent || (open && !!deferred)}
           aria-controls="wavebit-search-results"
           aria-label="Search your music"
           placeholder="Search your music"
@@ -260,18 +286,25 @@ export function SearchBox({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
+          // Focus alone doesn't reopen the list after a choice; a click does.
+          onClick={() => setOpen(true)}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') {
               e.preventDefault();
-              setActive((a) => Math.min(a + 1, items.length - 1));
+              setActive((a) => Math.min(a + 1, rows - 1));
             } else if (e.key === 'ArrowUp') {
               e.preventDefault();
               setActive((a) => Math.max(a - 1, 0));
-            } else if (e.key === 'Enter') choose(items[active]);
-            else if (e.key === 'Escape') {
+            } else if (e.key === 'Enter') {
+              if (showRecent) searchAgain(recentShown[active]);
+              else choose(items[active]);
+            } else if (e.key === 'Escape') {
               e.stopPropagation();
               if (query) clear();
-              else (e.target as HTMLInputElement).blur();
+              else {
+                setOpen(false);
+                (e.target as HTMLInputElement).blur();
+              }
             }
           }}
           className={`min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:hidden ${size === 'lg' ? 'text-base' : 'text-[0.8667rem]'}`}
@@ -296,62 +329,136 @@ export function SearchBox({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
         )}
       </label>
 
-      {open && deferred && (link || results.data || results.isFetched) && (
+      {showRecent && (
         <div
           id="wavebit-search-results"
           role="listbox"
-          aria-label="Search results"
+          aria-label="Recent searches"
           className="absolute inset-x-0 top-[calc(100%+12px)] z-50 max-h-[min(340px,60vh)] overflow-y-auto rounded-md bg-overlay p-2 shadow-overlay"
         >
-          {items.map((item, i) => (
-            <div key={item.key}>
-              {(i === 0 || items[i - 1]!.group !== item.group) && (
-                <h3
-                  className={`px-2 pb-1 text-xs font-semibold text-muted ${i === 0 ? 'pt-1' : 'pt-3'}`}
-                >
-                  {item.group}
-                </h3>
-              )}
+          <div className="flex items-center justify-between pt-1 pr-1 pb-1 pl-2">
+            <h3 className="text-xs font-semibold text-muted">
+              Recent searches
+            </h3>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                recentSearches.clear();
+                focusInput();
+              }}
+              className="rounded-[4px] px-1.5 py-0.5 text-xs font-medium text-muted hover:bg-sunken hover:text-foreground"
+            >
+              Clear all
+            </button>
+          </div>
+          {recentShown.map((text, i) => (
+            <div
+              key={text}
+              onMouseEnter={() => setActive(i)}
+              className={`flex h-10 items-center rounded-[4px] ${i === active ? 'bg-sunken' : ''}`}
+            >
               <button
                 type="button"
                 role="option"
                 aria-selected={i === active}
-                onMouseEnter={() => setActive(i)}
                 onMouseDown={(e) => e.preventDefault()}
-                onContextMenu={menuOn(item.menu)}
-                onClick={() => choose(item)}
-                className={`flex h-14 w-full items-center gap-3 rounded-[4px] px-2 text-left ${i === active ? 'bg-sunken' : ''}`}
+                onClick={() => searchAgain(text)}
+                className="flex h-full min-w-0 flex-1 items-center gap-3 rounded-[4px] px-2 text-left"
               >
-                {item.mark ? (
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-[4px] bg-sunken">
-                    <SpotifyMark size={20} />
-                  </span>
-                ) : (
-                  <Artwork
-                    src={item.art}
-                    size={40}
-                    rounded={item.round ? 'rounded-full' : 'rounded-[4px]'}
-                  />
-                )}
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm font-medium">
-                    {item.title}
-                  </span>
-                  <span className="truncate text-xs text-muted">
-                    {item.meta}
-                  </span>
-                </span>
+                <History
+                  size={16}
+                  className="shrink-0 text-muted"
+                  aria-hidden
+                />
+                <span className="truncate text-sm">{text}</span>
+              </button>
+              <button
+                type="button"
+                aria-label={`Remove “${text}” from recent searches`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  recentSearches.remove(text);
+                  focusInput();
+                }}
+                className="mr-1 grid size-7 shrink-0 place-items-center rounded-full text-muted hover:bg-overlay hover:text-foreground"
+              >
+                <X size={14} aria-hidden />
               </button>
             </div>
           ))}
-          {waiting && (
-            <p className="flex items-center gap-2 px-2 pt-2 pb-1 text-xs text-muted">
-              <Spinner size="sm" color="current" />
-              Searching YouTube Music
-            </p>
+          {recent.length > shown && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setShown(shown + RECENT_PAGE)}
+              className="mt-0.5 h-8 w-full rounded-[4px] px-2 text-left text-[0.8667rem] font-medium text-muted hover:bg-sunken hover:text-foreground"
+            >
+              Show more
+            </button>
           )}
         </div>
       )}
+
+      {open &&
+        !showRecent &&
+        deferred &&
+        (link || results.data || results.isFetched) && (
+          <div
+            id="wavebit-search-results"
+            role="listbox"
+            aria-label="Search results"
+            className="absolute inset-x-0 top-[calc(100%+12px)] z-50 max-h-[min(340px,60vh)] overflow-y-auto rounded-md bg-overlay p-2 shadow-overlay"
+          >
+            {items.map((item, i) => (
+              <div key={item.key}>
+                {(i === 0 || items[i - 1]!.group !== item.group) && (
+                  <h3
+                    className={`px-2 pb-1 text-xs font-semibold text-muted ${i === 0 ? 'pt-1' : 'pt-3'}`}
+                  >
+                    {item.group}
+                  </h3>
+                )}
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={i === active}
+                  onMouseEnter={() => setActive(i)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onContextMenu={menuOn(item.menu)}
+                  onClick={() => choose(item)}
+                  className={`flex h-14 w-full items-center gap-3 rounded-[4px] px-2 text-left ${i === active ? 'bg-sunken' : ''}`}
+                >
+                  {item.mark ? (
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-[4px] bg-sunken">
+                      <SpotifyMark size={20} />
+                    </span>
+                  ) : (
+                    <Artwork
+                      src={item.art}
+                      size={40}
+                      rounded={item.round ? 'rounded-full' : 'rounded-[4px]'}
+                    />
+                  )}
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-sm font-medium">
+                      {item.title}
+                    </span>
+                    <span className="truncate text-xs text-muted">
+                      {item.meta}
+                    </span>
+                  </span>
+                </button>
+              </div>
+            ))}
+            {waiting && (
+              <p className="flex items-center gap-2 px-2 pt-2 pb-1 text-xs text-muted">
+                <Spinner size="sm" color="current" />
+                Searching YouTube Music
+              </p>
+            )}
+          </div>
+        )}
     </div>
   );
 }
