@@ -43,6 +43,14 @@ export const SPOTIFY_ERRORS: Record<
     title: 'Spotify asked wavebit to slow down',
     body: 'Try again in a minute.',
   },
+  bad_client: {
+    title: 'The sign-in client was refused',
+    body: 'Check its ID and secret, then try again.',
+  },
+  denied: {
+    title: 'Access wasn’t granted',
+    body: 'Allow access on the sign-in page to connect.',
+  },
 };
 
 /** DESIGN.md › Setup step 2: what wavebit reads, in plain words. */
