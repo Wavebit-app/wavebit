@@ -17,6 +17,12 @@ import { artUrl, trackUrl } from '../../lib/format';
 import { gainFor } from './gain';
 import { FLAT_BANDS, isSilent, soundTargets } from './audioEffects';
 import { newListen, REPORT_MS, tick } from './listenSampler';
+import {
+  notePoint,
+  parsePoints,
+  RESUME_AFTER_S,
+  type ResumePoints,
+} from './resumeRules';
 import { buildSound, setSound, type Sound } from './soundGraph';
 import { youtubeEmbed } from './youtubeEmbed';
 
@@ -97,6 +103,7 @@ function storedAutoplay(): boolean {
 }
 
 const QUEUE_KEY = 'wavebit.queue';
+const RESUME_KEY = 'wavebit.resume';
 
 export function fromLocal(track: LocalTrack): Playable {
   return {
@@ -154,6 +161,10 @@ let state: PlayerState = {
 };
 const listeners = new Set<() => void>();
 let remember = true;
+/** Where unfinished songs stopped, so choosing one again carries on from there. */
+let points: ResumePoints = new Map();
+/** The song that is sounding. A hand-queued one isn't `queue[index]`. */
+let loadedId: string | null = null;
 let order: number[] = [];
 export interface PlaybackOptions {
   crossfade: Crossfade;
@@ -387,9 +398,22 @@ function persist(): void {
         position: state.position,
       }),
     );
+    localStorage.setItem(RESUME_KEY, JSON.stringify([...points]));
   } catch {
     // Storage full or blocked: the queue just won't survive a restart.
   }
+}
+
+/** Keeps the sounding song's place up to date as it plays. */
+function notePlace(): void {
+  if (loadedId) notePoint(points, loadedId, state.position, state.duration);
+}
+
+/** Where a song the listener chose starts: where it was left, else its beginning. */
+function resumeAt(track: Playable): number {
+  // Choosing the song that is playing starts it again.
+  if (state.playing && track.id === loadedId) return 0;
+  return points.get(track.id) ?? 0;
 }
 
 function updateMediaSession(track: Playable): void {
@@ -588,6 +612,9 @@ function beginBlend(): void {
       outgoing.fade!.gain.setValueCurveAtTime(FADE_OUT, now, length);
       incoming.fade!.gain.setValueCurveAtTime(FADE_IN, now, length);
       active = 1 - active;
+      // The outgoing song was heard to its end, though its last seconds overlap.
+      if (loadedId) points.delete(loadedId);
+      loadedId = next.track.id;
       becomeCurrent(next.track, next.index);
       set({ playing: true, position: 0 });
       fadeTimer = setTimeout(
@@ -652,6 +679,8 @@ async function loadStream(
 ): Promise<void> {
   const token = ++streamToken;
   streaming = true;
+  // Until the new video is asked for, the embed still reports the last one's time.
+  loadedId = null;
   endedFor = null;
   settleBlend();
   A().el.pause();
@@ -698,12 +727,15 @@ async function loadStream(
   heardThisSession.add(id);
   youtubeEmbed.setVolume(state.volume);
   youtubeEmbed.load(id, at, true);
+  loadedId = track.id;
   set({ playing: true });
   prefetchNext();
 }
 
 let listening = newListen('', 0);
 let listenedSong: PlayedSong | null = null;
+/** The song already put in Recently played during this listen. */
+let recentFor = '';
 
 function playedSong(track: Playable): PlayedSong {
   return {
@@ -739,22 +771,37 @@ function countListening(): void {
     reportListening();
     listening = newListen(track.id, now);
     listenedSong = playedSong(track);
+    recentFor = '';
     return;
   }
   listenedSong = playedSong(track);
   const length = state.duration * 1000 || track.durationMs;
-  if (tick(listening, now, state.playing, length))
+  const counted = tick(listening, now, state.playing, length);
+  // A song left unfinished is still the last one played: it joins Recently
+  // played once it can be picked up again, and moves up when it counts.
+  const resumable =
+    recentFor !== track.id && listening.heard >= RESUME_AFTER_S * 1000;
+  if (counted || resumable) {
+    recentFor = track.id;
     void window.wavebit.library.played(listenedSong).catch(() => {});
+  }
   if (listening.pendingMs >= REPORT_MS) reportListening();
 }
 
-window.addEventListener('pagehide', reportListening);
+// Closing the window keeps the place to the second, not to the last save.
+window.addEventListener('pagehide', () => {
+  reportListening();
+  persist();
+});
 
 youtubeEmbed.on({
   playing: (playing) => {
     if (!streaming) return;
     set({ playing });
-    if (!playing) reportListening();
+    if (!playing) {
+      reportListening();
+      persist();
+    }
     // YouTube's player goes back to normal speed for each new video.
     if (playing) youtubeEmbed.setSpeed(options.speed);
   },
@@ -769,6 +816,7 @@ youtubeEmbed.on({
   time: (position, duration) => {
     if (!streaming) return;
     set({ position, ...(duration > 0 && { duration }) });
+    notePlace();
     countListening();
     if (Date.now() - lastSaved > 5_000) {
       lastSaved = Date.now();
@@ -808,6 +856,7 @@ function load(track: Playable, autoplay: boolean, at = 0): void {
   settleBlend();
   const deck = A();
   deck.trackId = track.id;
+  loadedId = track.id;
   deck.el.src = trackUrl(track.id);
   deck.el.currentTime = at;
   set({ position: at, duration: track.durationMs / 1000, error: false });
@@ -821,6 +870,18 @@ function load(track: Playable, autoplay: boolean, at = 0): void {
     prefetchNext();
   }
   persist();
+}
+
+function startList(
+  list: Playable[],
+  start: number,
+  source: string,
+  at: number,
+): void {
+  order = shuffled(list.length, start);
+  // A new list keeps the songs you added by hand right after it (BitChord).
+  set({ queue: list, index: start, source, autoplayStart: null });
+  load(list[start]!, true, at);
 }
 
 export const player = {
@@ -853,18 +914,19 @@ export const player = {
       pauseAll();
     }, ms);
   },
-  /** Plays `list` from `start`, replacing the queue. */
+  /**
+   * Plays `list` from `start`, replacing the queue. A song that was left
+   * before its end carries on from where it stopped.
+   */
   playList(list: Playable[], start = 0, source = ''): void {
     if (list.length === 0) return;
-    order = shuffled(list.length, start);
-    // A new list keeps the songs you added by hand right after it (BitChord).
-    set({ queue: list, index: start, source, autoplayStart: null });
-    load(list[start]!, true);
+    startList(list, start, source, resumeAt(list[start]!));
   },
+  /** A shuffle picks the first song itself, so it starts at its beginning. */
   shuffleList(list: Playable[], source = ''): void {
     if (list.length === 0) return;
     set({ shuffle: true });
-    player.playList(list, Math.floor(Math.random() * list.length), source);
+    startList(list, Math.floor(Math.random() * list.length), source, 0);
   },
   toggle(): void {
     if (state.index < 0) return;
@@ -926,6 +988,8 @@ export const player = {
     if (streaming) {
       youtubeEmbed.seek(Math.max(0, seconds));
       set({ position: Math.max(0, seconds) });
+      notePlace();
+      persist();
       return;
     }
     settleBlend();
@@ -1001,15 +1065,16 @@ export const player = {
   playAt(index: number): void {
     const track = state.queue[index];
     if (!track) return;
+    const at = resumeAt(track);
     set({ index });
-    load(track, true);
+    load(track, true, at);
   },
   /** Plays a hand-queued song now; the hand-queued songs it skips over go. */
   playAdded(at: number): void {
     const track = state.upNext[at];
     if (!track) return;
     set({ upNext: state.upNext.slice(at + 1) });
-    load(track, true);
+    load(track, true, resumeAt(track));
   },
   toggleAutoplay(): void {
     const autoplay = !state.autoplay;
@@ -1036,6 +1101,7 @@ export const player = {
     remember = enabled;
     if (!enabled || state.index >= 0) return;
     try {
+      points = parsePoints(localStorage.getItem(RESUME_KEY));
       const saved = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? 'null') as {
         queue: Playable[];
         index: number;
@@ -1062,6 +1128,14 @@ for (const deck of decks) {
     if (!current() || state.blending) return;
     set({ playing: false });
     reportListening();
+    persist();
+  });
+  // A seek while paused is where the song should carry on from.
+  deck.el.addEventListener('seeked', () => {
+    if (!current() || !deck.el.paused) return;
+    set({ position: deck.el.currentTime });
+    notePlace();
+    persist();
   });
   deck.el.addEventListener('durationchange', () => {
     if (current() && Number.isFinite(deck.el.duration))
@@ -1070,6 +1144,7 @@ for (const deck of decks) {
   deck.el.addEventListener('timeupdate', () => {
     if (!current()) return;
     set({ position: deck.el.currentTime });
+    notePlace();
     countListening();
     const remaining = (deck.el.duration || 0) - deck.el.currentTime;
     if (
