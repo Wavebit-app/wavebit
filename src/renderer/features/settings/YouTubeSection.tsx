@@ -12,6 +12,24 @@ import {
 const field =
   'h-10 w-full rounded-md bg-sunken px-3 text-sm ring-1 ring-[var(--field-border)] outline-none focus:ring-2 focus:ring-accent';
 
+/** What a failed Google sign-in says, or null when the listener backed out. */
+export function googleSignInError(error: unknown): string | null {
+  switch (errorCode(error)) {
+    case 'cancelled':
+      return null;
+    case 'timed_out':
+      return 'The browser didn’t come back within 5 minutes.';
+    case 'bad_client':
+      return 'Google refused this OAuth client. Check that it is a Desktop app client and that the ID and secret are its own.';
+    case 'denied':
+      return 'Google didn’t grant access. Allow it on Google’s page; if the app is still in Testing, add your account as a test user.';
+    case 'network':
+      return 'Couldn’t reach Google. Check your connection and try again.';
+    default:
+      return 'Google didn’t finish signing in. Try again.';
+  }
+}
+
 /** Pasting your own Desktop-app OAuth client, with the steps to make one. */
 export function SetUp() {
   const { configure } = useYtOAuthActions();
@@ -146,14 +164,7 @@ export function YouTubeSection() {
                   onPress={() => {
                     setError(null);
                     signIn.mutate(undefined, {
-                      onError: (e) =>
-                        setError(
-                          errorCode(e) === 'cancelled'
-                            ? null
-                            : errorCode(e) === 'timed_out'
-                              ? 'The browser didn’t come back within 5 minutes.'
-                              : 'Google didn’t finish signing in. Check the client ID and secret, and that you are a test user.',
-                        ),
+                      onError: (e) => setError(googleSignInError(e)),
                     });
                   }}
                 >

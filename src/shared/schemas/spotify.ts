@@ -234,5 +234,9 @@ export type ErrorCode =
   | 'rate_limited'
   | 'changed'
   | 'network'
+  /** Google refused the OAuth client (wrong ID or secret, deleted, wrong type). */
+  | 'bad_client'
+  /** The person, or the account's settings, didn't grant access. */
+  | 'denied'
   /** Anything unexpected; the details stay in the main process's log. */
   | 'failed';

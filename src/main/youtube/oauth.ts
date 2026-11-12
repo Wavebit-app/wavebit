@@ -4,6 +4,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import path from 'node:path';
 import { AppError } from '../../shared/errors';
+import type { ErrorCode } from '../../shared/schemas/spotify';
 import { obj, readJson, str, num } from '../spotify/json';
 import { storageKind } from '../services/storageBackend';
 
@@ -115,13 +116,34 @@ async function tokenRequest(params: Record<string, string>): Promise<{
   }
   const body = await readJson(response);
   const accessToken = str(body?.access_token);
-  if (!response.ok || !accessToken)
-    throw new AppError(response.status === 400 ? 'signed_out' : 'network');
+  if (!response.ok || !accessToken) {
+    const error = str(body?.error);
+    // Google's own code only (never the request), so the log says why.
+    console.warn(`youtube oauth: token endpoint ${response.status} ${error}`);
+    throw new AppError(tokenError(response.status, error));
+  }
   return {
     accessToken,
     expiresIn: num(body?.expires_in) ?? 3600,
     refreshToken: str(body?.refresh_token),
   };
+}
+
+/**
+ * What a refused token request means. A refused client answers 401
+ * `invalid_client`; a revoked or expired grant answers 400 `invalid_grant`.
+ */
+function tokenError(status: number, error: string | null): ErrorCode {
+  if (
+    status === 401 ||
+    error === 'invalid_client' ||
+    error === 'unauthorized_client' ||
+    error === 'deleted_client'
+  )
+    return 'bad_client';
+  if (error === 'invalid_grant') return 'signed_out';
+  if (status === 429) return 'rate_limited';
+  return status >= 500 ? 'network' : 'failed';
 }
 
 const base64url = (b: Buffer) => b.toString('base64url');
@@ -152,6 +174,9 @@ export async function signInWithBrowser(): Promise<void> {
           return;
         }
         const got = url.searchParams.get('code');
+        const refused = url.searchParams.get('error');
+        if (refused)
+          console.warn(`youtube oauth: sign-in page said ${refused}`);
         res
           .writeHead(200, {
             'Content-Type': 'text/html; charset=utf-8',
@@ -162,8 +187,16 @@ export async function signInWithBrowser(): Promise<void> {
               ? '<!doctype html><title>wavebit</title><p style="font:16px system-ui;margin:40px">Signed in. You can close this tab and go back to wavebit.</p>'
               : '<!doctype html><title>wavebit</title><p style="font:16px system-ui;margin:40px">Signing in didn’t finish. Go back to wavebit and try again.</p>',
           );
-        finish(got ? null : new AppError('cancelled'), got);
+        finish(
+          got
+            ? null
+            : new AppError(refused === 'access_denied' ? 'denied' : 'failed'),
+          got,
+        );
       });
+      // Set once listening. The token request must repeat it exactly, and a
+      // closed server has no address any more, so it is never read again.
+      let redirect = '';
       const timer = setTimeout(
         () => finish(new AppError('timed_out'), null),
         SIGN_IN_TIMEOUT_MS,
@@ -173,15 +206,7 @@ export async function signInWithBrowser(): Promise<void> {
         server.close();
         pending = null;
         if (error || !got) reject(error ?? new AppError('cancelled'));
-        else
-          resolve({
-            code: got,
-            redirect: `http://127.0.0.1:${port()}/callback`,
-          });
-      };
-      const port = () => {
-        const address = server.address();
-        return typeof address === 'object' && address ? address.port : 0;
+        else resolve({ code: got, redirect });
       };
       pending = {
         server,
@@ -189,9 +214,15 @@ export async function signInWithBrowser(): Promise<void> {
       };
       // Loopback only, on a port the OS picks.
       server.listen(0, '127.0.0.1', () => {
+        const address = server.address();
+        if (!address || typeof address !== 'object') {
+          finish(new AppError('failed'), null);
+          return;
+        }
+        redirect = `http://127.0.0.1:${address.port}/callback`;
         const params = new URLSearchParams({
           client_id: stored.clientId,
-          redirect_uri: `http://127.0.0.1:${port()}/callback`,
+          redirect_uri: redirect,
           response_type: 'code',
           scope: SCOPE,
           code_challenge: challenge,
@@ -213,7 +244,10 @@ export async function signInWithBrowser(): Promise<void> {
     grant_type: 'authorization_code',
     redirect_uri: code.redirect,
   });
-  await save({ ...stored, refreshToken: tokens.refreshToken });
+  // Google sends a refresh token with prompt=consent; keep the old one if not.
+  const refreshToken = tokens.refreshToken ?? stored.refreshToken;
+  if (!refreshToken) throw new AppError('failed');
+  await save({ ...stored, refreshToken });
   access = {
     token: tokens.accessToken,
     expiresAt: Date.now() + tokens.expiresIn * 1000,
@@ -229,12 +263,20 @@ export async function accessToken(): Promise<string> {
   if (access && access.expiresAt - 60_000 > Date.now()) return access.token;
   const stored = await load();
   if (!stored?.refreshToken) throw new AppError('signed_out');
-  const fresh = await tokenRequest({
-    client_id: stored.clientId,
-    client_secret: stored.clientSecret,
-    refresh_token: stored.refreshToken,
-    grant_type: 'refresh_token',
-  });
+  let fresh: Awaited<ReturnType<typeof tokenRequest>>;
+  try {
+    fresh = await tokenRequest({
+      client_id: stored.clientId,
+      client_secret: stored.clientSecret,
+      refresh_token: stored.refreshToken,
+      grant_type: 'refresh_token',
+    });
+  } catch (error) {
+    // A revoked or expired grant won't come back: show signed out, not stuck.
+    if (error instanceof AppError && error.code === 'signed_out')
+      await save({ ...stored, refreshToken: null });
+    throw error;
+  }
   access = {
     token: fresh.accessToken,
     expiresAt: Date.now() + fresh.expiresIn * 1000,

@@ -24,7 +24,10 @@ import { useResolvedTheme } from '../../lib/useTheme';
 import { TitleBar } from '../../layouts/TitleBar';
 import { FolderList } from '../library/FolderList';
 import { AccentSwatches, ThemeCards } from '../settings/pickers';
-import { SetUp as YouTubeClient } from '../settings/YouTubeSection';
+import {
+  googleSignInError,
+  SetUp as YouTubeClient,
+} from '../settings/YouTubeSection';
 import type { ErrorCode } from '../../../shared/schemas/spotify';
 import { SPOTIFY_ERRORS, WhatWavebitSees } from '../spotify/ConnectSpotify';
 import { AccountsArt, FoldersArt, ThemesArt, WelcomeArt } from './BannerArt';
@@ -242,14 +245,7 @@ function Accounts({ back, next }: { back: () => void; next: () => void }) {
   const signInYouTube = () => {
     setYtError(null);
     yt.signIn.mutate(undefined, {
-      onError: (e) =>
-        setYtError(
-          errorCode(e) === 'cancelled'
-            ? null
-            : errorCode(e) === 'timed_out'
-              ? 'The browser didn’t come back within 5 minutes.'
-              : 'Google didn’t finish signing in. Check the client ID and secret, and that you are a test user.',
-        ),
+      onError: (e) => setYtError(googleSignInError(e)),
     });
   };
   const connectYouTube = () => {
