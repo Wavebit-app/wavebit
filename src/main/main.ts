@@ -5,12 +5,14 @@ import { registerAppIpc } from './ipc/app';
 import { registerDownloadsIpc } from './ipc/downloads';
 import { registerLibraryIpc } from './ipc/library';
 import { registerLyricsIpc } from './ipc/lyrics';
+import { registerOfflineIpc } from './ipc/offline';
 import { registerPartyIpc } from './ipc/party';
 import { registerSettingsIpc } from './ipc/settings';
 import { registerSpotifyIpc } from './ipc/spotify';
 import { registerUpdatesIpc } from './ipc/updates';
 import { registerYouTubeIpc } from './ipc/youtube';
 import { lib, startLibrary } from './library/library';
+import { startOffline } from './offline/offlineSongs';
 import {
   inviteIn,
   leavePartyOnQuit,
@@ -106,10 +108,12 @@ void app.whenReady().then(() => {
   registerSpotifyIpc();
   registerYouTubeIpc();
   registerDownloadsIpc();
+  registerOfflineIpc();
   registerUpdatesIpc();
   registerPartyIpc();
   startLibrary();
   startDownloads();
+  startOffline();
   startUpdates((value) => (quitting = value));
   startParty();
   // `wavebit://party/CODE` opens wavebit. A dev build isn't an installed app, so it doesn't claim the link.

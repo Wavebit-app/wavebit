@@ -313,7 +313,16 @@ async function videoIdOf(song: DownloadSong): Promise<string> {
   throw new DownloadError('no_match');
 }
 
-function runYtDlp(job: Job, videoId: string, cwd: string): Promise<void> {
+/**
+ * One yt-dlp run for `videoId` into `cwd`. Downloads and the offline copies
+ * (offline/offlineSongs.ts) both start it here, with the same fixed arguments.
+ */
+export function spawnYtDlp(
+  videoId: string,
+  cwd: string,
+  onChild: (child: ChildProcess) => void,
+  onProgress?: (fraction: number) => void,
+): Promise<void> {
   const env: NodeJS.ProcessEnv = {
     PATH: '',
     HOME: userPath('yt-dlp-home'),
@@ -332,7 +341,7 @@ function runYtDlp(job: Job, videoId: string, cwd: string): Promise<void> {
       }),
       { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
     );
-    job.child = child;
+    onChild(child);
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
@@ -345,10 +354,7 @@ function runYtDlp(job: Job, videoId: string, cwd: string): Promise<void> {
       partial = lines.pop() ?? '';
       for (const line of lines) {
         const fraction = parseProgress(line.trim());
-        if (fraction !== null) {
-          job.info.fraction = fraction;
-          changed(job);
-        }
+        if (fraction !== null) onProgress?.(fraction);
       }
     });
     let stderr = '';
@@ -368,8 +374,20 @@ function runYtDlp(job: Job, videoId: string, cwd: string): Promise<void> {
   });
 }
 
+function runYtDlp(job: Job, videoId: string, cwd: string): Promise<void> {
+  return spawnYtDlp(
+    videoId,
+    cwd,
+    (child) => (job.child = child),
+    (fraction) => {
+      job.info.fraction = fraction;
+      changed(job);
+    },
+  );
+}
+
 /** The one file yt-dlp left, checked by what it holds. */
-async function outputFile(dir: string): Promise<string> {
+export async function outputFile(dir: string): Promise<string> {
   const [name, ...others] = (await fs.readdir(dir)).filter((n) =>
     n.endsWith('.m4a'),
   );
@@ -568,6 +586,25 @@ function pump(): void {
   }
   changed();
   saveSoon();
+}
+
+/**
+ * Counts one more yt-dlp start against the hourly limit Downloads keeps, or
+ * returns false when the limit is reached. The offline copies use it, so the
+ * two together stay under what YouTube allows.
+ */
+export function takeDownloadStart(): boolean {
+  const now = Date.now();
+  stored.starts = recentStarts(stored.starts, now);
+  if (pause === 'blocked' || msUntilStart(stored.starts, now) > 0) return false;
+  stored.starts.push(now);
+  saveSoon();
+  return true;
+}
+
+/** The file of a song Downloads saved, if its record says there is one. */
+export function savedFileOf(videoId: string): string | null {
+  return stored.records[videoId]?.file ?? null;
 }
 
 // --- What the page can ask for -------------------------------------------------
@@ -817,7 +854,7 @@ export function startDownloads(): void {
 }
 
 /** yt-dlp starts Deno and more; on Windows a survivor would lock its .exe. */
-function killTree(child: ChildProcess): void {
+export function killTree(child: ChildProcess): void {
   if (process.platform !== 'win32' || !child.pid) {
     child.kill();
     return;

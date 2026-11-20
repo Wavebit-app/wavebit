@@ -1,4 +1,4 @@
-import { Button, Slider, Tooltip } from '@heroui/react';
+import { Button, Slider, Spinner, Tooltip } from '@heroui/react';
 import {
   CirclePause,
   CirclePlay,
@@ -50,14 +50,50 @@ export function IconButton({
   );
 }
 
+/**
+ * Play, Pause, or a spinner in the circle's place while the song is loading
+ * (DESIGN.md › Player › Loading). A press while it spins stops the start.
+ */
+export function PlayButton({
+  size,
+  icon,
+  className = '',
+}: {
+  size: number;
+  icon: number;
+  className?: string;
+}) {
+  const playing = usePlayer((s) => s.playing);
+  const loading = usePlayer((s) => s.loading);
+  const Icon = playing ? CirclePause : CirclePlay;
+  return (
+    <IconButton
+      label={loading ? 'Loading' : playing ? 'Pause' : 'Play'}
+      onPress={player.toggle}
+      size={size}
+      className={className}
+    >
+      {loading ? (
+        // The size of the drawn circle inside the icon's box.
+        <Spinner
+          color="current"
+          aria-hidden
+          className="text-accent"
+          style={{ width: (icon * 5) / 6, height: (icon * 5) / 6 }}
+        />
+      ) : (
+        <Icon size={icon} strokeWidth={1.75} className="text-accent" />
+      )}
+    </IconButton>
+  );
+}
+
 /** Shuffle, previous, Play, next and repeat. `scale` grows them for the full-screen player. */
 export function Transport({ scale = 1 }: { scale?: number }) {
-  const playing = usePlayer((s) => s.playing);
   const shuffle = usePlayer((s) => s.shuffle);
   const repeat = usePlayer((s) => s.repeat);
   const small = 16 * scale;
   const mid = 18 * scale;
-  const PlayIcon = playing ? CirclePause : CirclePlay;
   return (
     <div className="flex items-center justify-between gap-3">
       <IconButton
@@ -71,18 +107,7 @@ export function Transport({ scale = 1 }: { scale?: number }) {
       <IconButton label="Previous" onPress={player.previous} size={36 * scale}>
         <SkipBack size={mid} />
       </IconButton>
-      <IconButton
-        label={playing ? 'Pause' : 'Play'}
-        onPress={player.toggle}
-        size={40 * scale}
-        className="text-accent"
-      >
-        <PlayIcon
-          size={34 * scale}
-          strokeWidth={1.75}
-          className="text-accent"
-        />
-      </IconButton>
+      <PlayButton size={40 * scale} icon={34 * scale} className="text-accent" />
       <IconButton label="Next" onPress={player.next} size={36 * scale}>
         <SkipForward size={mid} />
       </IconButton>
@@ -114,7 +139,8 @@ export function SeekBar({
 }) {
   const position = usePlayer((s) => Math.floor(s.position));
   const duration = usePlayer((s) => s.duration);
-  const playing = usePlayer((s) => s.playing);
+  // The wave flows only while there is sound.
+  const playing = usePlayer((s) => s.playing && !s.loading);
   const max = Math.max(1, duration);
   const played = `${Math.min(100, (Math.min(position, max) / max) * 100)}%`;
   return (

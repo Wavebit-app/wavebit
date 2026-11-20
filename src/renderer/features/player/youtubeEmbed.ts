@@ -14,7 +14,8 @@ const PLAYING = 1;
 const BUFFERING = 3;
 
 export interface EmbedEvents {
-  playing(playing: boolean): void;
+  /** `buffering`: it means to play, but has no sound yet. */
+  playing(playing: boolean, buffering: boolean): void;
   time(position: number, duration: number): void;
   ended(): void;
   /** The channel behind the playing video, as YouTube's player reports it. */
@@ -119,7 +120,11 @@ window.addEventListener('message', (e: MessageEvent) => {
   }
   if (data.event === 'onStateChange' && typeof data.info === 'number') {
     if (data.info === ENDED) events?.ended();
-    else events?.playing(data.info === PLAYING || data.info === BUFFERING);
+    else
+      events?.playing(
+        data.info === PLAYING || data.info === BUFFERING,
+        data.info === BUFFERING,
+      );
   }
   if (data.event === 'onError' && typeof data.info === 'number')
     events?.error(data.info);
@@ -145,6 +150,7 @@ window.addEventListener('message', (e: MessageEvent) => {
       else if (info.playerState >= PLAYING)
         events?.playing(
           info.playerState === PLAYING || info.playerState === BUFFERING,
+          info.playerState === BUFFERING,
         );
     }
   }
@@ -162,13 +168,17 @@ export const youtubeEmbed = {
   current(): string | null {
     return videoId;
   },
-  load(id: string, start = 0, autoplay = true): void {
-    if (!frame) {
+  /**
+   * `reload` asks for the video again even if it is the one loaded, and makes
+   * a new player if the old one never answered (it was opened offline).
+   */
+  load(id: string, start = 0, autoplay = true, reload = false): void {
+    if (!frame || (reload && !ready)) {
       videoId = id;
       create(id, start, autoplay);
       return;
     }
-    if (id === videoId) {
+    if (id === videoId && !reload) {
       post('seekTo', [start, true]);
       if (autoplay) post('playVideo');
       return;

@@ -114,6 +114,8 @@ export const SettingsSchema = z
     equalizerBalance: z.number().min(-1).max(1),
     /** AutoPlay won't suggest a song already played or suggested this session. */
     dontRepeatSongs: z.boolean(),
+    /** Streamed songs are copied privately as they play, to carry on without a connection. */
+    keepOffline: z.boolean(),
     spotifyCanvas: z.boolean(),
     setupStep: SetupStepSchema,
     /** Only the main process adds folders, from the system folder picker. */
@@ -217,6 +219,7 @@ export const DEFAULT_SETTINGS: Settings = {
   equalizerBands: [0, 0, 0, 0, 0, 0, 0],
   equalizerBalance: 0,
   dontRepeatSongs: false,
+  keepOffline: true,
   spotifyCanvas: false,
   setupStep: 0,
   libraryFolders: [],

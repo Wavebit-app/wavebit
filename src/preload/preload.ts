@@ -124,6 +124,12 @@ const api: WavebitApi = {
     openFolder: () => invoke(Channels.downloadsOpenFolder),
     deleteTrack: (id) => invoke(Channels.downloadsDeleteTrack, { id }),
   },
+  offline: {
+    keep: (videoId) => invoke(Channels.offlineKeep, { videoId }),
+    has: (videoIds) => invoke(Channels.offlineHas, { videoIds }),
+    online: () => invoke(Channels.offlineOnline),
+    clear: () => invoke(Channels.offlineClear),
+  },
   party: {
     state: () => invoke(Channels.partyState),
     setMe: (me) => invoke(Channels.partyMe, me),

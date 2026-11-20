@@ -13,6 +13,7 @@ import type {
   UpdateStatus,
 } from '../../shared/schemas/updates';
 import { stopDownloadsForUpdate } from '../downloads/downloads';
+import { stopOffline } from '../offline/offlineSongs';
 import { emit } from '../ipc/handle';
 import { onSettingsChange, readSettings } from '../services/settings';
 import {
@@ -229,6 +230,7 @@ export async function installUpdate(): Promise<UpdateStatus> {
   if (status.state !== 'downloaded') return status;
   set({ state: 'installing', error: undefined });
   setQuitting(true);
+  stopOffline();
   await stopDownloadsForUpdate();
   try {
     // Not silent: on Windows this is what shows the installer's progress

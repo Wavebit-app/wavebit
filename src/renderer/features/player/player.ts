@@ -13,6 +13,7 @@ import type {
 import type { YtMatchQuery } from '../../../shared/schemas/youtube';
 import { forLyricsSearch, primaryArtist } from '../../../shared/lrc';
 import { sameRecording, songTitleOfVideo } from '../../../shared/lyricsParse';
+import { checkNow, isDown, markDown, onBack } from '../../lib/connection';
 import { artUrl, trackUrl } from '../../lib/format';
 import { gainFor } from './gain';
 import { FLAT_BANDS, isSilent, soundTargets } from './audioEffects';
@@ -79,6 +80,12 @@ export interface PlayerState {
   shuffle: boolean;
   repeat: Repeat;
   error: boolean;
+  /** Asked to play, with no sound yet: starting, or waiting for more of the song. */
+  loading: boolean;
+  /** Paused for want of a connection; it carries on when the connection is back. */
+  offline: boolean;
+  /** A stream playing from its offline copy, on a deck, instead of YouTube's player. */
+  fromCopy: boolean;
   /** True while two songs overlap in a crossfade. */
   blending: boolean;
   /** BitChord's AutoPlay: YouTube Music's radio when the queue runs low. */
@@ -153,6 +160,9 @@ let state: PlayerState = {
   shuffle: false,
   repeat: 'off',
   error: false,
+  loading: false,
+  offline: false,
+  fromCopy: false,
   blending: false,
   autoplay: storedAutoplay(),
   autoplayStart: null,
@@ -349,7 +359,7 @@ let sleepTimer: ReturnType<typeof setTimeout> | undefined;
 function pauseAll(): void {
   if (streaming) {
     youtubeEmbed.pause();
-    set({ playing: false });
+    set({ playing: false, loading: false });
     return;
   }
   settleBlend();
@@ -701,6 +711,7 @@ let askedAt = 0;
 let askedPlace = 0;
 function asked(seconds: number): void {
   askedAt = performance.now();
+  progressAt = askedAt;
   askedPlace = seconds;
   streamTicks = 0;
 }
@@ -733,16 +744,27 @@ async function loadStream(
   track: Playable,
   autoplay: boolean,
   at: number,
+  /** Asks YouTube for the video again, even if it is the one it has: a stuck start. */
+  reload = false,
 ): Promise<void> {
   const token = ++streamToken;
+  leaveCopy();
   streaming = true;
+  streamStarted = false;
+  progressAt = performance.now();
   asked(at);
   // Until the new video is asked for, the embed still reports the last one's time.
   loadedId = null;
   endedFor = null;
   settleBlend();
   A().el.pause();
-  set({ position: at, duration: track.durationMs / 1000, error: false });
+  set({
+    position: at,
+    duration: track.durationMs / 1000,
+    error: false,
+    offline: false,
+    loading: autoplay,
+  });
   updateMediaSession(track);
   persist();
   if (!autoplay) return;
@@ -778,16 +800,190 @@ async function loadStream(
     }
   }
   if (!id) {
-    set({ error: true, playing: false });
+    // Without a connection, YouTube Music can't be searched: not the song's fault.
+    if (isDown() || !(await checkNow())) {
+      if (token === streamToken) skipOffline();
+      return;
+    }
+    if (token !== streamToken) return;
+    set({ error: true, playing: false, loading: false });
     skipSoon(token);
     return;
   }
   heardThisSession.add(id);
+  if (isDown()) {
+    const copy = await hasCopy(id);
+    if (token !== streamToken) return;
+    if (copy) playCopy(track, id, at);
+    else skipOffline();
+    return;
+  }
   youtubeEmbed.setVolume(state.volume);
-  youtubeEmbed.load(id, at, true);
+  youtubeEmbed.load(id, at, true, reload);
   loadedId = track.id;
+  progressAt = performance.now();
   set({ playing: true });
   prefetchNext();
+}
+
+// --- Keep playing offline ---------------------------------------------------------
+//
+// YouTube's player only holds the next half minute or so of a song. While a
+// stream plays, the main process saves a private copy of it
+// (offline/offlineSongs.ts); when the stream gets stuck and the connection is
+// gone, the song carries on from that copy on a deck, at the same second.
+
+/** No new time from YouTube for this long while playing: the stream is stuck. */
+const STALL_MS = 4_000;
+/** The same, once the connection is known to be down. */
+const STALL_OFFLINE_MS = 1_500;
+/** A new video that hasn't started by now is stuck too. */
+const START_MS = 10_000;
+/** How long a stream plays before its copy is asked for, so skipped songs aren't saved. */
+const KEEP_AFTER_MS = 3_000;
+
+/** True while the current stream plays from its offline copy on a deck. */
+let onCopy = false;
+/** When the stream's time last moved on, and whether it has since it was asked for. */
+let progressAt = 0;
+let streamStarted = false;
+let checkingStuck = false;
+/** Songs passed over in a row for want of a copy, so an offline queue can't go round forever. */
+let offlineSkips = 0;
+/** Where those skips began: the song to wait on when nothing can play. */
+let skipFrom = -1;
+
+async function hasCopy(videoId: string): Promise<boolean> {
+  const found = await window.wavebit.offline
+    .has([videoId])
+    .catch(() => [] as string[]);
+  return found.length > 0;
+}
+
+function leaveCopy(): void {
+  if (!onCopy) return;
+  onCopy = false;
+  set({ fromCopy: false });
+}
+
+/** Plays a stream's offline copy on the deck from `at` seconds; YouTube's player stops. */
+function playCopy(track: Playable, videoId: string, at: number): void {
+  if (streaming) {
+    streaming = false;
+    streamToken++;
+    youtubeEmbed.pause();
+  }
+  settleBlend();
+  onCopy = true;
+  offlineSkips = 0;
+  const deck = A();
+  deck.trackId = track.id;
+  loadedId = track.id;
+  deck.el.src = `media://offline/${videoId}`;
+  deck.el.currentTime = at;
+  set({
+    position: at,
+    error: false,
+    offline: false,
+    fromCopy: true,
+    loading: true,
+  });
+  graph();
+  // Loudness is measured for library files only.
+  if (deck.level && ctx)
+    deck.level.gain.setTargetAtTime(1, ctx.currentTime, 0.05);
+  void deck.el.play().catch(() => set({ playing: false, loading: false }));
+}
+
+/** Back online (lib/connection.ts): a song paused for want of a connection carries on where it stopped. */
+onBack(() => {
+  offlineSkips = 0;
+  if (!state.offline) return;
+  set({ offline: false });
+  const track = player.current();
+  if (!track) return;
+  if (isStream(track)) void loadStream(track, true, state.position, true);
+  else load(track, true, state.position);
+});
+
+/** Pauses with "You're offline" on the song; onBack above starts it again. */
+function goneOffline(): void {
+  if (streaming) youtubeEmbed.pause();
+  set({ playing: false, loading: false, offline: true });
+  reportListening();
+  persist();
+  markDown();
+}
+
+/** Offline, a song with no copy is passed over for the next one that can play. */
+function skipOffline(): void {
+  markDown();
+  if (offlineSkips === 0) skipFrom = state.index;
+  const songs = state.queue.length + state.upNext.length;
+  if (++offlineSkips > songs || !following()) {
+    offlineSkips = 0;
+    // Nothing can play: wait on the song the listener chose, not the last one tried.
+    const chosen = state.queue[skipFrom];
+    if (chosen && skipFrom !== state.index) {
+      set({
+        index: skipFrom,
+        position: points.get(chosen.id) ?? 0,
+        duration: chosen.durationMs / 1000,
+      });
+      updateMediaSession(chosen);
+    }
+    goneOffline();
+    return;
+  }
+  advance();
+}
+
+/** The stream has stopped making sound: carry on from the copy, or find out why. */
+async function streamStuck(): Promise<void> {
+  const track = player.current();
+  const id = track?.stream?.videoId ?? null;
+  const token = streamToken;
+  if (!streaming || !track || !state.playing) return;
+  if (id && (await hasCopy(id))) {
+    if (token !== streamToken || !state.playing) return;
+    playCopy(track, id, state.position);
+    return;
+  }
+  // Online, the song is only slow: the spinner stays and YouTube carries on.
+  if (await checkNow()) return;
+  if (token !== streamToken || !state.playing) return;
+  // A song that never started is passed over; one cut short waits where it is.
+  if (streamStarted) goneOffline();
+  else skipOffline();
+}
+
+setInterval(() => {
+  if (!streaming || !state.playing || state.offline || checkingStuck) return;
+  const limit = !streamStarted
+    ? START_MS
+    : isDown()
+      ? STALL_OFFLINE_MS
+      : STALL_MS;
+  if (performance.now() - progressAt < limit) return;
+  checkingStuck = true;
+  void streamStuck().finally(() => {
+    checkingStuck = false;
+    progressAt = performance.now();
+  });
+}, 500);
+
+// With a copy at hand, there's no need to wait for YouTube's buffer to run out.
+window.addEventListener('offline', () => {
+  if (streaming && state.playing) progressAt = 0;
+});
+
+/** Asks for the playing stream's copy once it has played a moment. */
+function keepSoon(token: number): void {
+  setTimeout(() => {
+    const id = player.current()?.stream?.videoId;
+    if (token !== streamToken || !streaming || !state.playing || !id) return;
+    void window.wavebit.offline.keep(id).catch(() => {});
+  }, KEEP_AFTER_MS);
 }
 
 let listening = newListen('', 0);
@@ -853,9 +1049,12 @@ window.addEventListener('pagehide', () => {
 });
 
 youtubeEmbed.on({
-  playing: (playing) => {
+  playing: (playing, buffering) => {
     if (!streaming) return;
-    set({ playing });
+    set({ playing, loading: playing && buffering });
+    // Out of sound mid-song: look for the copy now rather than after a silence.
+    // (Not just after a seek, which buffers too.)
+    if (playing && buffering && streamStarted && askedAt === 0) progressAt = 0;
     if (!playing) {
       reportListening();
       persist();
@@ -881,7 +1080,17 @@ youtubeEmbed.on({
     askedAt = 0;
     streamTimeAt = performance.now();
     // A report that hasn't moved on is a video still buffering.
-    streamTicks = position > state.position ? streamTicks + 1 : 0;
+    const moved = position > state.position;
+    streamTicks = moved ? streamTicks + 1 : 0;
+    if (moved) {
+      progressAt = streamTimeAt;
+      if (!streamStarted) {
+        streamStarted = true;
+        offlineSkips = 0;
+        keepSoon(streamToken);
+      }
+      if (state.loading) set({ loading: false });
+    }
     set({ position, ...(duration > 0 && { duration }) });
     notePlace();
     countListening();
@@ -907,7 +1116,7 @@ youtubeEmbed.on({
   },
   error: () => {
     if (!streaming) return;
-    set({ error: true, playing: false });
+    set({ error: true, playing: false, loading: false });
     skipSoon(streamToken);
   },
 });
@@ -918,6 +1127,7 @@ function load(track: Playable, autoplay: boolean, at = 0): void {
     void loadStream(track, autoplay, at);
     return;
   }
+  leaveCopy();
   if (streaming) {
     streaming = false;
     streamToken++;
@@ -929,7 +1139,13 @@ function load(track: Playable, autoplay: boolean, at = 0): void {
   loadedId = track.id;
   deck.el.src = trackUrl(track.id);
   deck.el.currentTime = at;
-  set({ position: at, duration: track.durationMs / 1000, error: false });
+  set({
+    position: at,
+    duration: track.durationMs / 1000,
+    error: false,
+    offline: false,
+    loading: autoplay,
+  });
   updateMediaSession(track);
   if (autoplay) {
     graph();
@@ -947,9 +1163,16 @@ function resume(): void {
   if (streaming) {
     const track = player.current();
     const loaded = youtubeEmbed.current();
-    // A restored queue hasn't asked YouTube for anything yet.
-    if (track && (!loaded || loaded !== track.stream?.videoId))
-      void loadStream(track, true, state.position);
+    // A restored queue hasn't asked YouTube for anything yet; a song that
+    // never started, or stopped for want of a connection, is asked for again.
+    if (
+      track &&
+      (!loaded ||
+        loaded !== track.stream?.videoId ||
+        !streamStarted ||
+        state.offline)
+    )
+      void loadStream(track, true, state.position, true);
     // The button answers at once; the embed's own state report confirms it.
     else {
       youtubeEmbed.play();
@@ -959,7 +1182,7 @@ function resume(): void {
   }
   settleBlend();
   graph();
-  if (A().trackId) applyLevel(A(), A().trackId!);
+  if (A().trackId && !onCopy) applyLevel(A(), A().trackId!);
   void A()
     .el.play()
     .catch(() => {});
@@ -1371,11 +1594,21 @@ export const partyPlayer = {
 // Every event is filtered to the deck that is current; the other deck is either
 // idle or the song fading out.
 for (const deck of decks) {
-  const current = () => deck === A();
+  // While YouTube's player has the song, a deck's late pause or time is the last song's.
+  const current = () => deck === A() && !streaming;
   deck.el.addEventListener('play', () => current() && set({ playing: true }));
+  deck.el.addEventListener('playing', () => {
+    if (!current()) return;
+    offlineSkips = 0;
+    if (state.loading) set({ loading: false });
+  });
+  // Out of sound to play: still starting, or reading more of the file.
+  deck.el.addEventListener('waiting', () => {
+    if (current() && !deck.el.paused) set({ loading: true });
+  });
   deck.el.addEventListener('pause', () => {
     if (!current() || state.blending) return;
-    set({ playing: false });
+    set({ playing: false, loading: false });
     reportListening();
     persist();
   });
@@ -1425,7 +1658,10 @@ for (const deck of decks) {
   // A file deleted since the last scan: say so.
   deck.el.addEventListener(
     'error',
-    () => current() && deck.trackId && set({ error: true, playing: false }),
+    () =>
+      current() &&
+      deck.trackId &&
+      set({ error: true, playing: false, loading: false }),
   );
 }
 
@@ -1443,7 +1679,7 @@ if ('mediaSession' in navigator) {
 
 /** True while YouTube's embedded player is the one playing (YouTubeStage shows it). */
 export function useStreaming(): boolean {
-  return usePlayer((s) => isStream(s.queue[s.index]));
+  return usePlayer((s) => isStream(s.queue[s.index]) && !s.fromCopy);
 }
 
 /** Subscribes to one slice; components re-render only when it changes. */

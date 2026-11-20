@@ -1,7 +1,5 @@
 import { useLayoutEffect } from 'react';
 import {
-  CirclePause,
-  CirclePlay,
   ListMusic,
   Maximize2,
   MicVocal,
@@ -14,13 +12,33 @@ import { menuOn } from '../../design/ContextMenu';
 import { songMenu } from '../menus/menus';
 import { useSettings } from '../../lib/queries';
 import { PartyButton } from '../party/PartyBits';
-import { IconButton, SeekBar, Transport, Volume } from './controls';
-import { player, usePlayer } from './player';
+import { IconButton, PlayButton, SeekBar, Transport, Volume } from './controls';
+import { player, usePlayer, type Playable } from './player';
+
+/** The line under the title: the artist, or why the song isn't playing. */
+function ArtistLine({ track }: { track: Playable }) {
+  const error = usePlayer((s) => s.error);
+  const offline = usePlayer((s) => s.offline);
+  const fromCopy = usePlayer((s) => s.fromCopy);
+  const message = offline
+    ? 'You’re offline. It carries on when you’re back.'
+    : !error
+      ? null
+      : track.stream && !fromCopy
+        ? 'YouTube couldn’t play this song.'
+        : 'This file is gone. Rescan your library.';
+  return (
+    <span
+      className={`truncate text-[0.8667rem] ${error && !offline ? 'text-danger' : 'text-muted'}`}
+    >
+      {message ?? track.artist}
+    </span>
+  );
+}
 
 function NowPlaying() {
   const index = usePlayer((s) => s.index);
   const queue = usePlayer((s) => s.queue);
-  const error = usePlayer((s) => s.error);
   const track = queue[index];
   if (!track) return null;
   return (
@@ -42,11 +60,7 @@ function NowPlaying() {
           <span className="truncate text-sm font-medium">{track.title}</span>
           <OnDevice track={track} />
         </span>
-        <span
-          className={`truncate text-[0.8667rem] ${error ? 'text-danger' : 'text-muted'}`}
-        >
-          {error ? 'This file is gone. Rescan your library.' : track.artist}
-        </span>
+        <ArtistLine track={track} />
       </span>
     </button>
   );
@@ -121,7 +135,6 @@ export function PlayerBar() {
 /** DESIGN.md › Mini player: a floating card above the tab bar in compact windows. */
 export function MiniPlayer() {
   const track = usePlayer((s) => s.queue[s.index]);
-  const playing = usePlayer((s) => s.playing);
   const progress = usePlayer((s) =>
     s.duration > 0 ? s.position / s.duration : 0,
   );
@@ -146,9 +159,7 @@ export function MiniPlayer() {
             <span className="truncate text-sm font-medium">{track.title}</span>
             <OnDevice track={track} />
           </span>
-          <span className="truncate text-[0.8667rem] text-muted">
-            {track.artist}
-          </span>
+          <ArtistLine track={track} />
         </span>
       </button>
       <IconButton
@@ -159,17 +170,7 @@ export function MiniPlayer() {
         <PanelRight size={20} />
       </IconButton>
       <PartyButton onlyInParty size={44} icon={20} />
-      <IconButton
-        label={playing ? 'Pause' : 'Play'}
-        onPress={player.toggle}
-        size={44}
-      >
-        {playing ? (
-          <CirclePause size={30} strokeWidth={1.75} className="text-accent" />
-        ) : (
-          <CirclePlay size={30} strokeWidth={1.75} className="text-accent" />
-        )}
-      </IconButton>
+      <PlayButton size={44} icon={30} />
       <IconButton label="Next" onPress={player.next} size={44}>
         <SkipForward size={20} />
       </IconButton>
