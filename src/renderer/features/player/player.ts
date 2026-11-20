@@ -13,6 +13,7 @@ import type {
 import type { YtMatchQuery } from '../../../shared/schemas/youtube';
 import { forLyricsSearch, primaryArtist } from '../../../shared/lrc';
 import { sameRecording, songTitleOfVideo } from '../../../shared/lyricsParse';
+import { checkNow, isDown, markDown, onBack } from '../../lib/connection';
 import { artUrl, trackUrl } from '../../lib/format';
 import { gainFor } from './gain';
 import { FLAT_BANDS, isSilent, soundTargets } from './audioEffects';
@@ -800,7 +801,7 @@ async function loadStream(
   }
   if (!id) {
     // Without a connection, YouTube Music can't be searched: not the song's fault.
-    if (netDown || !(await reachable())) {
+    if (isDown() || !(await checkNow())) {
       if (token === streamToken) skipOffline();
       return;
     }
@@ -810,7 +811,7 @@ async function loadStream(
     return;
   }
   heardThisSession.add(id);
-  if (netDown) {
+  if (isDown()) {
     const copy = await hasCopy(id);
     if (token !== streamToken) return;
     if (copy) playCopy(track, id, at);
@@ -838,16 +839,11 @@ const STALL_MS = 4_000;
 const STALL_OFFLINE_MS = 1_500;
 /** A new video that hasn't started by now is stuck too. */
 const START_MS = 10_000;
-/** How often a lost connection is checked again. */
-const PROBE_MS = 5_000;
 /** How long a stream plays before its copy is asked for, so skipped songs aren't saved. */
 const KEEP_AFTER_MS = 3_000;
 
 /** True while the current stream plays from its offline copy on a deck. */
 let onCopy = false;
-/** The connection is known to be down; checked again every few seconds. */
-let netDown = false;
-let probeTimer: ReturnType<typeof setTimeout> | undefined;
 /** When the stream's time last moved on, and whether it has since it was asked for. */
 let progressAt = 0;
 let streamStarted = false;
@@ -856,8 +852,6 @@ let checkingStuck = false;
 let offlineSkips = 0;
 /** Where those skips began: the song to wait on when nothing can play. */
 let skipFrom = -1;
-
-const reachable = () => window.wavebit.offline.online().catch(() => false);
 
 async function hasCopy(videoId: string): Promise<boolean> {
   const found = await window.wavebit.offline
@@ -901,21 +895,8 @@ function playCopy(track: Playable, videoId: string, at: number): void {
   void deck.el.play().catch(() => set({ playing: false, loading: false }));
 }
 
-/** The connection is gone: note it, and look again every few seconds. */
-function noteDown(): void {
-  netDown = true;
-  clearTimeout(probeTimer);
-  probeTimer = setTimeout(() => void probe(), PROBE_MS);
-}
-
-/** Back online: a song paused for want of a connection carries on where it stopped. */
-async function probe(): Promise<void> {
-  clearTimeout(probeTimer);
-  if (!(await reachable())) {
-    probeTimer = setTimeout(() => void probe(), PROBE_MS);
-    return;
-  }
-  netDown = false;
+/** Back online (lib/connection.ts): a song paused for want of a connection carries on where it stopped. */
+onBack(() => {
   offlineSkips = 0;
   if (!state.offline) return;
   set({ offline: false });
@@ -923,20 +904,20 @@ async function probe(): Promise<void> {
   if (!track) return;
   if (isStream(track)) void loadStream(track, true, state.position, true);
   else load(track, true, state.position);
-}
+});
 
-/** Pauses with "You're offline" on the song; probe() starts it again. */
+/** Pauses with "You're offline" on the song; onBack above starts it again. */
 function goneOffline(): void {
   if (streaming) youtubeEmbed.pause();
   set({ playing: false, loading: false, offline: true });
   reportListening();
   persist();
-  noteDown();
+  markDown();
 }
 
 /** Offline, a song with no copy is passed over for the next one that can play. */
 function skipOffline(): void {
-  noteDown();
+  markDown();
   if (offlineSkips === 0) skipFrom = state.index;
   const songs = state.queue.length + state.upNext.length;
   if (++offlineSkips > songs || !following()) {
@@ -969,7 +950,7 @@ async function streamStuck(): Promise<void> {
     return;
   }
   // Online, the song is only slow: the spinner stays and YouTube carries on.
-  if (await reachable()) return;
+  if (await checkNow()) return;
   if (token !== streamToken || !state.playing) return;
   // A song that never started is passed over; one cut short waits where it is.
   if (streamStarted) goneOffline();
@@ -980,7 +961,7 @@ setInterval(() => {
   if (!streaming || !state.playing || state.offline || checkingStuck) return;
   const limit = !streamStarted
     ? START_MS
-    : netDown
+    : isDown()
       ? STALL_OFFLINE_MS
       : STALL_MS;
   if (performance.now() - progressAt < limit) return;
@@ -991,12 +972,10 @@ setInterval(() => {
   });
 }, 500);
 
+// With a copy at hand, there's no need to wait for YouTube's buffer to run out.
 window.addEventListener('offline', () => {
-  noteDown();
-  // With a copy at hand, there's no need to wait for YouTube's buffer to run out.
   if (streaming && state.playing) progressAt = 0;
 });
-window.addEventListener('online', () => void probe());
 
 /** Asks for the playing stream's copy once it has played a moment. */
 function keepSoon(token: number): void {

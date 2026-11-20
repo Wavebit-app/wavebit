@@ -15,6 +15,7 @@ import { PartyStatus } from '../features/party/PartyStatus';
 import { BREAKPOINTS, useWindowWidth } from '../lib/useBreakpoint';
 import type { Command } from './commands';
 import { ConnectLabels } from './ConnectLabels';
+import { OfflineLabel } from './OfflineLabel';
 
 const mac = window.wavebit.platform === 'darwin';
 
@@ -186,6 +187,7 @@ export function TitleBar({
         className={`flex items-center justify-end ${mac ? 'pr-3' : 'pr-[148px]'}`}
       >
         {!minimal && width < BREAKPOINTS.medium && <DownloadsButton />}
+        {connect && <OfflineLabel />}
         {connect && <PartyStatus />}
         {connect && <ConnectLabels />}
       </div>

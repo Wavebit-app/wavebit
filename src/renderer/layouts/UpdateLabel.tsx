@@ -6,14 +6,14 @@ import { WaveRing } from '../design/WaveRing';
 import { useUpdateStatus } from '../lib/queries';
 
 /** A label, not a button: no fill at rest, on hover or pressed, only the icon and the words. */
-const BASE =
+export const LABEL_BASE =
   'no-drag h-7 min-w-0 gap-1.5 px-1.5 text-[0.8667rem] whitespace-nowrap [--button-bg-hover:transparent] [--button-bg-pressed:transparent]';
-const LABEL = `${BASE} font-medium text-foreground hover:text-accent-soft-foreground`;
+const LABEL = `${LABEL_BASE} font-medium text-foreground hover:text-accent-soft-foreground`;
 /**
  * The two that need the listener, in the accent's text colour (which is ink
  * for amber in light, DESIGN.md › Contrast), still with no fill.
  */
-const NEEDS_YOU = `${BASE} font-semibold text-accent-soft-foreground underline-offset-4 hover:underline`;
+const NEEDS_YOU = `${LABEL_BASE} font-semibold text-accent-soft-foreground underline-offset-4 hover:underline`;
 const ICON = 14;
 
 const openAbout = (focus: string) => {
@@ -64,7 +64,7 @@ export function UpdateLabel() {
     return (
       <div
         role="status"
-        className={`${BASE} flex items-center font-medium text-muted`}
+        className={`${LABEL_BASE} flex items-center font-medium text-muted`}
       >
         <Spinner size="sm" color="current" className="text-accent" />
         Restarting…
