@@ -516,6 +516,17 @@ function Playback() {
           onChange={(dontRepeatSongs) => update.mutate({ dontRepeatSongs })}
         />
       </Group>
+      <Group title="Offline">
+        <SettingSwitch
+          id="keepOffline"
+          isSelected={s.keepOffline}
+          onChange={(keepOffline) => {
+            update.mutate({ keepOffline });
+            if (!keepOffline)
+              void window.wavebit.offline.clear().catch(() => {});
+          }}
+        />
+      </Group>
     </>
   );
 }

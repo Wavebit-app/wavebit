@@ -3,6 +3,7 @@ import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
+import { offlineFile } from '../offline/offlineSongs';
 import { cachedImage } from '../services/artCache';
 import { artUrlFromPath, mediaCors } from './urls';
 
@@ -144,7 +145,8 @@ export function parseRange(
 }
 
 /**
- * media://track/<id> streams a library file with Range support and
+ * media://track/<id> streams a library file with Range support,
+ * media://offline/<video id> a streamed song's offline copy, and
  * media://art/<album key> serves its cover. Only ids from the library are
  * accepted, so the page can never name a path.
  */
@@ -170,22 +172,26 @@ export function serveMedia(source: () => MediaSource): void {
       });
     }
 
-    if (!ID.test(id)) return new Response('Not found', { status: 404 });
-
-    if (host === 'art') {
-      const art = source().artwork(id);
-      if (!art) return new Response('Not found', { status: 404 });
-      return new Response(new Uint8Array(art.data), {
-        headers: {
-          'Content-Type': art.mime,
-          'Cache-Control': 'max-age=3600',
-          ...cors,
-        },
-      });
+    let file: string | null;
+    if (host === 'offline') {
+      // A streamed song's private copy (offline/offlineSongs.ts), by video id.
+      file = await offlineFile(id);
+    } else {
+      if (!ID.test(id)) return new Response('Not found', { status: 404 });
+      if (host === 'art') {
+        const art = source().artwork(id);
+        if (!art) return new Response('Not found', { status: 404 });
+        return new Response(new Uint8Array(art.data), {
+          headers: {
+            'Content-Type': art.mime,
+            'Cache-Control': 'max-age=3600',
+            ...cors,
+          },
+        });
+      }
+      if (host !== 'track') return new Response('Not found', { status: 404 });
+      file = source().trackPath(id);
     }
-    if (host !== 'track') return new Response('Not found', { status: 404 });
-
-    const file = source().trackPath(id);
     if (!file) return new Response('Not found', { status: 404 });
     let size: number;
     try {

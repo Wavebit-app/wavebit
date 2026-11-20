@@ -402,6 +402,14 @@ export const SETTINGS: SettingEntry[] = [
       'radio suggestions session duplicate',
     ],
   ]),
+  ...group('playback', 'Offline', [
+    [
+      'keepOffline',
+      'Keep playing offline',
+      'Songs from YouTube Music are saved privately as they play, so they carry on if the connection drops. Up to 1 GB, oldest first. Turning this off removes them.',
+      'internet connection cache network wifi',
+    ],
+  ]),
   ...group('library', 'Music folders', [
     [
       'musicFolders',

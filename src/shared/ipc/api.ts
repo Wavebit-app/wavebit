@@ -31,6 +31,7 @@ import type {
   DownloadSong,
   DownloadsState,
 } from '../schemas/downloads';
+import type { OfflineSaved } from '../schemas/offline';
 import type { Settings, SettingsPatch } from '../schemas/settings';
 import type {
   SpotifyAlbum,
@@ -98,6 +99,7 @@ export interface EventPayloads {
   [Events.listeningChanged]: null;
   [Events.trayCommand]: TrayCommand;
   [Events.downloadsChanged]: DownloadsDelta;
+  [Events.offlineSaved]: OfflineSaved;
   [Events.updateStatus]: UpdateStatus;
   /** The window left the full screen the full-screen player put it in. */
   [Events.leftFullScreen]: null;
@@ -273,6 +275,17 @@ export interface WavebitApi {
     openFolder(): Promise<void>;
     /** Moves a downloaded song's file to the Trash, by its library track id. */
     deleteTrack(id: string): Promise<void>;
+  };
+  /** Keep playing offline: private copies of streamed songs (offline/offlineSongs.ts). */
+  offline: {
+    /** Saves a copy of this song while it plays, if there isn't one. */
+    keep(videoId: string): Promise<void>;
+    /** Which of these songs can play without a connection. */
+    has(videoIds: string[]): Promise<string[]>;
+    /** Whether YouTube can be reached right now. */
+    online(): Promise<boolean>;
+    /** Removes every copy. */
+    clear(): Promise<void>;
   };
   party: {
     state(): Promise<PartyState>;
