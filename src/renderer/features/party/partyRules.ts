@@ -167,6 +167,53 @@ export type PingLevel = 'good' | 'slow' | 'poor';
 export const pingLevel = (roundTripMs: number): PingLevel =>
   roundTripMs < 150 ? 'good' : roundTripMs <= 400 ? 'slow' : 'poor';
 
+export type PartyConnection =
+  | 'offline'
+  | 'connecting'
+  | 'unstable'
+  | 'reconnecting'
+  | 'live';
+
+export interface LinkStatus {
+  text: string;
+  status: string;
+  warn: boolean;
+}
+
+/** User-facing state for this device's link to the party server. */
+export function linkStatus(
+  connection: PartyConnection,
+  synced: boolean,
+  roundTripMs: number,
+): LinkStatus {
+  switch (connection) {
+    case 'connecting':
+      return { text: 'Connecting…', status: 'Connecting', warn: false };
+    case 'unstable':
+      return {
+        text: 'Connection unstable',
+        status: 'Connection unstable',
+        warn: true,
+      };
+    case 'reconnecting':
+      return { text: 'Reconnecting…', status: 'Reconnecting', warn: true };
+    case 'live':
+      return synced
+        ? {
+            text: `${roundTripMs} ms`,
+            status: 'In sync',
+            warn: false,
+          }
+        : {
+            text: 'Checking connection…',
+            status: 'Checking connection',
+            warn: false,
+          };
+    case 'offline':
+      return { text: 'Offline', status: 'Offline', warn: false };
+  }
+}
+
 /**
  * The link to share. With an invite page published (`page`, ending in
  * `/invite/`) it is an https link, which chat apps make pressable, and the

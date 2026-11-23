@@ -3,7 +3,7 @@ import { ChevronRight, Users } from 'lucide-react';
 import type { PartyMember } from '../../../shared/schemas/party';
 import { setUi, useUi } from '../../app/ui';
 import { useSettings } from '../../lib/queries';
-import { pingLevel } from './partyRules';
+import { linkStatus, pingLevel } from './partyRules';
 import { useParty } from './store';
 
 type Face = Pick<
@@ -75,18 +75,25 @@ const DOT: Record<ReturnType<typeof pingLevel>, string> = {
 };
 
 /** The connection in a few words, and the dot that goes with it. */
-export function useLink(): { text: string; dot: string; warn: boolean } {
+export function useLink(): {
+  text: string;
+  dot: string;
+  warn: boolean;
+  status: string;
+} {
   const connection = useParty((s) => s.connection);
   const synced = useParty((s) => s.clockSynced);
   const trip = useParty((s) => s.roundTripMs);
-  if (connection !== 'live')
-    return {
-      text: 'Reconnecting…',
-      dot: 'ring-2 ring-warning ring-inset',
-      warn: true,
-    };
-  if (!synced) return { text: 'Syncing', dot: 'bg-faint', warn: false };
-  return { text: `${trip} ms`, dot: DOT[pingLevel(trip)], warn: false };
+  const link = linkStatus(connection, synced, trip);
+  return {
+    ...link,
+    dot:
+      connection === 'live' && synced
+        ? DOT[pingLevel(trip)]
+        : link.warn
+          ? 'ring-2 ring-warning ring-inset'
+          : 'bg-faint',
+  };
 }
 
 /** Settings › Listen together's first switch: off, none of it shows. */

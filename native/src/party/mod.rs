@@ -14,6 +14,7 @@ mod clock;
 mod invite;
 mod wire;
 
+use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
@@ -37,7 +38,9 @@ use wire::{
     ACTIONS, Member, Membership, Playback, Preview, Queue, Refusal, Snapshot, clean_members,
 };
 
-const PING_EVERY: Duration = Duration::from_secs(15);
+const PING_EVERY: Duration = Duration::from_secs(5);
+const UNSTABLE_AFTER: Duration = Duration::from_secs(10);
+const DROP_AFTER: Duration = Duration::from_secs(15);
 /// A burst on arrival makes the first seconds accurate.
 const PING_BURST: u8 = 4;
 const PING_BURST_GAP: Duration = Duration::from_millis(300);
@@ -45,7 +48,15 @@ const REPORT_EVERY: Duration = Duration::from_secs(10);
 /// How long a read waits before the loop looks at its commands again.
 const READ_SLICE: Duration = Duration::from_millis(20);
 const NET_TIMEOUT: Duration = Duration::from_secs(10);
-const MAX_BACKOFF: Duration = Duration::from_secs(30);
+const MAX_BACKOFF: Duration = Duration::from_secs(8);
+
+fn heartbeat_unstable(silence: Duration) -> bool {
+    silence >= UNSTABLE_AFTER
+}
+
+fn heartbeat_timed_out(silence: Duration) -> bool {
+    silence >= DROP_AFTER
+}
 
 type Socket = WebSocket<MaybeTlsStream<TcpStream>>;
 
@@ -248,6 +259,11 @@ struct Worker {
     socket: Option<Socket>,
     retry_at: Instant,
     backoff: Duration,
+    has_dropped: bool,
+    welcomed: bool,
+    connected_at: Option<Instant>,
+    last_pong_at: Option<Instant>,
+    pending_pings: VecDeque<(i64, Instant)>,
     next_ping: Instant,
     burst: u8,
     next_report: Instant,
@@ -267,6 +283,11 @@ impl Worker {
             socket: None,
             retry_at: now,
             backoff: Duration::from_secs(1),
+            has_dropped: false,
+            welcomed: false,
+            connected_at: None,
+            last_pong_at: None,
+            pending_pings: VecDeque::new(),
             next_ping: now,
             burst: 0,
             next_report: now,
@@ -382,6 +403,11 @@ impl Worker {
         self.view.connection = "connecting";
         self.take_snapshot(membership.party);
         self.backoff = Duration::from_secs(1);
+        self.has_dropped = false;
+        self.welcomed = false;
+        self.connected_at = None;
+        self.last_pong_at = None;
+        self.pending_pings.clear();
         self.retry_at = Instant::now();
     }
 
@@ -429,6 +455,10 @@ impl Worker {
     fn end(&mut self, code: &str) {
         self.socket = None;
         self.token = None;
+        self.welcomed = false;
+        self.connected_at = None;
+        self.last_pong_at = None;
+        self.pending_pings.clear();
         self.clock.reset();
         self.view = idle();
         self.view.error = Some(Fault::new(code));
@@ -444,9 +474,16 @@ impl Worker {
             Ok(socket) => {
                 let now = Instant::now();
                 self.socket = Some(socket);
-                self.view.connection = "live";
-                self.view.error = None;
-                self.backoff = Duration::from_secs(1);
+                self.welcomed = false;
+                self.connected_at = Some(now);
+                self.last_pong_at = Some(now);
+                self.pending_pings.clear();
+                self.view.connection = if self.has_dropped {
+                    "reconnecting"
+                } else {
+                    "connecting"
+                };
+                self.view.clock_synced = false;
                 self.burst = PING_BURST;
                 self.next_ping = now;
                 self.next_report = now + REPORT_EVERY;
@@ -461,20 +498,39 @@ impl Worker {
     fn lost(&mut self) {
         self.socket = None;
         self.clock.reset();
-        self.view.connection = "connecting";
+        self.welcomed = false;
+        self.connected_at = None;
+        self.last_pong_at = None;
+        self.pending_pings.clear();
+        self.has_dropped = true;
+        self.view.connection = "reconnecting";
         self.view.clock_synced = false;
+        self.view.round_trip_ms = 0;
+        self.view.offset_ms = 0;
         let backoff = self.backoff.as_millis() as u64;
-        let jitter = self.mono.now_ms().unsigned_abs() % (backoff + 1);
-        self.retry_at = Instant::now() + Duration::from_millis(backoff / 2 + jitter);
+        let minimum = backoff / 2;
+        let jitter = self.mono.now_ms().unsigned_abs() % (backoff - minimum + 1);
+        self.retry_at = Instant::now() + Duration::from_millis(minimum + jitter);
         self.backoff = (self.backoff * 2).min(MAX_BACKOFF);
     }
 
-    fn send(&mut self, frame: Value) {
+    fn send(&mut self, frame: Value) -> bool {
         let Some(socket) = self.socket.as_mut() else {
-            return;
+            return false;
         };
         if socket.send(Message::text(frame.to_string())).is_err() {
             self.lost();
+            false
+        } else {
+            true
+        }
+    }
+
+    fn maybe_live(&mut self) {
+        if self.welcomed && self.view.clock_synced {
+            self.view.connection = "live";
+            self.view.error = None;
+            self.backoff = Duration::from_secs(1);
         }
     }
 
@@ -496,6 +552,25 @@ impl Worker {
 
     fn pump(&mut self) {
         let now = Instant::now();
+        if !self.welcomed
+            && self
+                .connected_at
+                .is_some_and(|connected| now.saturating_duration_since(connected) >= DROP_AFTER)
+        {
+            self.lost();
+            return;
+        }
+        if let Some(last_pong) = self.last_pong_at {
+            let silence = now.saturating_duration_since(last_pong);
+            if heartbeat_timed_out(silence) {
+                self.lost();
+                return;
+            }
+            if heartbeat_unstable(silence) && self.view.connection != "unstable" {
+                self.view.connection = "unstable";
+                self.view.clock_synced = false;
+            }
+        }
         if now >= self.next_ping {
             self.burst = self.burst.saturating_sub(1);
             self.next_ping = now
@@ -504,7 +579,12 @@ impl Worker {
                 } else {
                     PING_EVERY
                 };
-            self.send(json!({ "type": "ping", "clientMs": self.mono.now_ms() }));
+            let client_ms = self.mono.now_ms();
+            if self.send(json!({ "type": "ping", "clientMs": client_ms })) {
+                self.pending_pings.push_back((client_ms, now));
+            } else {
+                return;
+            }
         }
         if now >= self.next_report {
             self.next_report = now + REPORT_EVERY;
@@ -550,6 +630,8 @@ impl Worker {
                     self.view.you = Some(you.clean());
                 }
                 self.take_snapshot(party);
+                self.welcomed = true;
+                self.maybe_live();
             }
             "pong" => {
                 let (Some(sent), Some(server)) =
@@ -557,12 +639,26 @@ impl Worker {
                 else {
                     return;
                 };
+                let now = Instant::now();
+                while self.pending_pings.front().is_some_and(|(id, sent_at)| {
+                    *id != sent && now.saturating_duration_since(*sent_at) > DROP_AFTER
+                }) {
+                    self.pending_pings.pop_front();
+                }
+                let Some(index) = self.pending_pings.iter().position(|(id, sent_at)| {
+                    *id == sent && now.saturating_duration_since(*sent_at) < UNSTABLE_AFTER
+                }) else {
+                    return;
+                };
+                self.pending_pings.remove(index);
                 self.clock.record(sent, server, received_ms);
                 self.view.clock_synced = true;
                 self.view.round_trip_ms = self.clock.round_trip_ms();
+                self.last_pong_at = Some(now);
                 // The page counts from the wall clock, so it gets the offset from that.
                 let mono_ahead = self.mono.now_ms() - wall_ms();
                 self.view.offset_ms = self.clock.offset_ms().unwrap_or(0) + mono_ahead;
+                self.maybe_live();
             }
             "state" => {
                 let Ok(playback) = serde_json::from_value::<Playback>(frame["playback"].take())
@@ -893,6 +989,7 @@ mod tests {
     fn a_pong_sets_the_clock() {
         let (mut w, _) = worker();
         let sent = w.mono.now_ms();
+        w.pending_pings.push_back((sent, Instant::now()));
         w.on_frame(
             &format!(
                 r#"{{"type":"pong","clientMs":{sent},"serverMs":{}}}"#,
@@ -903,6 +1000,75 @@ mod tests {
         assert!(w.view.clock_synced);
         assert_eq!(w.view.round_trip_ms, 40);
         assert_eq!(w.clock.offset_ms(), Some(4_980));
+    }
+
+    #[test]
+    fn the_heartbeat_marks_delay_before_dropping_the_socket() {
+        assert!(!heartbeat_unstable(Duration::from_secs(9)));
+        assert!(heartbeat_unstable(Duration::from_secs(10)));
+        assert!(!heartbeat_timed_out(Duration::from_secs(14)));
+        assert!(heartbeat_timed_out(Duration::from_secs(15)));
+    }
+
+    #[test]
+    fn welcome_and_a_matching_pong_are_both_required_for_live() {
+        let (mut w, _) = worker();
+        w.view.connection = "connecting";
+        w.backoff = Duration::from_secs(8);
+        let sent = w.mono.now_ms();
+        w.pending_pings.push_back((sent, Instant::now()));
+        w.on_frame(
+            &format!(r#"{{"type":"pong","clientMs":{sent},"serverMs":{sent}}}"#),
+            sent + 25,
+        );
+        assert_eq!(w.view.connection, "connecting");
+        assert_eq!(w.backoff, Duration::from_secs(8));
+
+        w.on_frame(
+            r#"{"type":"welcome","party":{"playback":{"seq":9,"positionMs":400},"queue":{"seq":3}},"you":{}}"#,
+            sent + 30,
+        );
+        assert_eq!(w.view.connection, "live");
+        assert_eq!(w.view.playback.seq, 9);
+        assert_eq!(w.view.queue.seq, 3);
+        assert_eq!(w.backoff, Duration::from_secs(1));
+        assert_eq!(w.view.connection, "live");
+    }
+
+    #[test]
+    fn unmatched_and_duplicate_pongs_do_not_refresh_the_heartbeat() {
+        let (mut w, _) = worker();
+        let sent = w.mono.now_ms();
+        w.pending_pings.push_back((sent, Instant::now()));
+        w.on_frame(
+            &format!(
+                r#"{{"type":"pong","clientMs":{},"serverMs":{}}}"#,
+                sent - 1,
+                sent
+            ),
+            sent + 10,
+        );
+        assert!(!w.view.clock_synced);
+        w.pending_pings.front_mut().unwrap().1 = Instant::now() - UNSTABLE_AFTER;
+        w.on_frame(
+            &format!(r#"{{"type":"pong","clientMs":{sent},"serverMs":{sent}}}"#),
+            sent + 15,
+        );
+        assert!(!w.view.clock_synced);
+        w.pending_pings.front_mut().unwrap().1 = Instant::now();
+        let accepted_at = Instant::now();
+        w.last_pong_at = Some(accepted_at);
+        w.on_frame(
+            &format!(r#"{{"type":"pong","clientMs":{sent},"serverMs":{sent}}}"#),
+            sent + 20,
+        );
+        assert!(w.view.clock_synced);
+        w.last_pong_at = Some(accepted_at);
+        w.on_frame(
+            &format!(r#"{{"type":"pong","clientMs":{sent},"serverMs":{sent}}}"#),
+            sent + 30,
+        );
+        assert_eq!(w.last_pong_at, Some(accepted_at));
     }
 
     #[test]

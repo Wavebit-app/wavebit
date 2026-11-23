@@ -11,6 +11,7 @@ import {
   bannerIndex,
   faultMessage,
   inviteLink,
+  linkStatus,
   msUntilStart,
   newDrift,
   partyPositionMs,
@@ -199,6 +200,34 @@ test('ping levels, links and messages', () => {
     faultMessage({ code: 'new_thing', message: 'The server said so.' }),
     'The server said so.',
   );
+});
+
+test('connection labels reflect the local heartbeat state', () => {
+  assert.deepEqual(linkStatus('connecting', false, 0), {
+    text: 'Connecting…',
+    status: 'Connecting',
+    warn: false,
+  });
+  assert.deepEqual(linkStatus('unstable', false, 190), {
+    text: 'Connection unstable',
+    status: 'Connection unstable',
+    warn: true,
+  });
+  assert.deepEqual(linkStatus('reconnecting', false, 0), {
+    text: 'Reconnecting…',
+    status: 'Reconnecting',
+    warn: true,
+  });
+  assert.deepEqual(linkStatus('live', false, 0), {
+    text: 'Checking connection…',
+    status: 'Checking connection',
+    warn: false,
+  });
+  assert.deepEqual(linkStatus('live', true, 47), {
+    text: '47 ms',
+    status: 'In sync',
+    warn: false,
+  });
 });
 
 test('everyone in a party gets the same banner', () => {
