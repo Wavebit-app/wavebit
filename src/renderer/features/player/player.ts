@@ -748,6 +748,14 @@ async function loadStream(
   reload = false,
 ): Promise<void> {
   const token = ++streamToken;
+  const replacingStream = streaming;
+  // A new queue entry can be scheduled for later. Stop the old iframe now;
+  // otherwise it keeps sounding while the player already represents the new
+  // track in state.
+  if (replacingStream) youtubeEmbed.pause();
+  // Matching and the Music-only lookup can be asynchronous. Ignore reports
+  // from the previous video during that gap as well.
+  youtubeEmbed.invalidate();
   leaveCopy();
   streaming = true;
   streamStarted = false;
@@ -763,11 +771,11 @@ async function loadStream(
     duration: track.durationMs / 1000,
     error: false,
     offline: false,
+    playing: false,
     loading: autoplay,
   });
   updateMediaSession(track);
   persist();
-  if (!autoplay) return;
   let id = track.stream?.videoId ?? null;
   if (!id && track.stream?.match) {
     const found = await window.wavebit.youtube
@@ -800,6 +808,9 @@ async function loadStream(
     }
   }
   if (!id) {
+    // A paused selection with no resolved video has nothing to cue yet. It is
+    // resolved on Play, when the player can actually request the stream.
+    if (!autoplay) return;
     // Without a connection, YouTube Music can't be searched: not the song's fault.
     if (isDown() || !(await checkNow())) {
       if (token === streamToken) skipOffline();
@@ -808,6 +819,12 @@ async function loadStream(
     if (token !== streamToken) return;
     set({ error: true, playing: false, loading: false });
     skipSoon(token);
+    return;
+  }
+  if (!autoplay) {
+    // Cue known tracks ahead of a scheduled start. YouTube's cue command
+    // prepares the player but does not fetch the media until Play or seek.
+    if (!isDown()) youtubeEmbed.load(id, at, false);
     return;
   }
   heardThisSession.add(id);
@@ -1163,15 +1180,9 @@ function resume(): void {
   if (streaming) {
     const track = player.current();
     const loaded = youtubeEmbed.current();
-    // A restored queue hasn't asked YouTube for anything yet; a song that
-    // never started, or stopped for want of a connection, is asked for again.
-    if (
-      track &&
-      (!loaded ||
-        loaded !== track.stream?.videoId ||
-        !streamStarted ||
-        state.offline)
-    )
+    // A restored queue has no matching embed video. A cued video should be
+    // played in place instead of being loaded again at its scheduled start.
+    if (track && (!loaded || loaded !== track.stream?.videoId || state.offline))
       void loadStream(track, true, state.position, true);
     // The button answers at once; the embed's own state report confirms it.
     else {
@@ -1547,11 +1558,6 @@ export const partyPlayer = {
   wantsPlaying: (): boolean => state.playing,
   /** Played by YouTube's player, which takes a moment to carry on after a seek. */
   isStream: (): boolean => streaming,
-  /** Plays the song a touch fast or slow for a moment, to close a gap without a seek. 1 ends it. */
-  setRate(speed: number): void {
-    if (streaming) youtubeEmbed.setSpeed(speed);
-    else A().el.playbackRate = speed;
-  },
   /** Really sounding, so its position can be compared with the party's. */
   settled(): boolean {
     if (!state.playing) return false;

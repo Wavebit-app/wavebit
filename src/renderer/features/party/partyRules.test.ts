@@ -136,13 +136,17 @@ test('only a listener in a locked party is locked', () => {
   );
 });
 
-test('a new control is landed on once, within 120 ms', () => {
+test('a new control only corrects drift beyond the normal limit', () => {
+  assert.equal(shouldSeek(newDrift(), playing({ seq: 5 }), 1_200, 0), false);
   const memory = newDrift();
-  assert.equal(shouldSeek(memory, playing({ seq: 5 }), 300, 0), true);
-  // The same state again (the heartbeat) with the same small drift is left alone.
-  assert.equal(shouldSeek(memory, playing({ seq: 5 }), 300, 700), false);
+  assert.equal(shouldSeek(memory, playing({ seq: 5 }), 1_201, 0), true);
+  // The immediate correction is followed by the same six-second cooldown.
+  assert.equal(shouldSeek(memory, playing({ seq: 5 }), 2_000, 700), false);
+  const next = newDrift();
+  // The same state again (the heartbeat) with sub-threshold drift is left alone.
+  assert.equal(shouldSeek(next, playing({ seq: 5 }), 300, 700), false);
   // A queue-only change raises the seq but moves nothing.
-  assert.equal(shouldSeek(memory, playing({ seq: 6 }), 300, 1_400), false);
+  assert.equal(shouldSeek(next, playing({ seq: 6 }), 300, 1_400), false);
   assert.equal(shouldSeek(newDrift(), playing({ seq: 5 }), 100, 0), false);
 });
 

@@ -1,3 +1,5 @@
+import { isRequestedVideo } from './youtubeEmbedRules';
+
 /**
  * YouTube's official embedded player, driven through its documented
  * postMessage interface (the IFrame Player API's wire format), so no YouTube
@@ -29,6 +31,8 @@ let frame: HTMLIFrameElement | null = null;
 let ready = false;
 let pending: { func: string; args: unknown[] }[] = [];
 let videoId: string | null = null;
+/** Last video identity actually reported by the iframe, not merely requested. */
+let reportedVideoId: string | null = null;
 let handshake: ReturnType<typeof setInterval> | undefined;
 let events: EmbedEvents | null = null;
 
@@ -89,6 +93,7 @@ function create(id: string, start: number, autoplay: boolean): void {
   frame.className = 'size-full border-0';
   frame.addEventListener('load', listen);
   ready = false;
+  reportedVideoId = null;
   pending = [];
   host.replaceChildren(frame);
 }
@@ -118,15 +123,20 @@ window.addEventListener('message', (e: MessageEvent) => {
     pending = [];
     for (const c of queued) post(c.func, c.args);
   }
-  if (data.event === 'onStateChange' && typeof data.info === 'number') {
-    if (data.info === ENDED) events?.ended();
-    else
-      events?.playing(
-        data.info === PLAYING || data.info === BUFFERING,
-        data.info === BUFFERING,
-      );
-  }
-  if (data.event === 'onError' && typeof data.info === 'number')
+  // State-change events carry no video id, so only use the last video identity
+  // the iframe reported. Non-ended states also arrive in infoDelivery, where
+  // the video identity can be checked on the same message.
+  if (
+    data.event === 'onStateChange' &&
+    data.info === ENDED &&
+    isRequestedVideo(reportedVideoId, videoId)
+  )
+    events?.ended();
+  if (
+    data.event === 'onError' &&
+    typeof data.info === 'number' &&
+    isRequestedVideo(reportedVideoId, videoId)
+  )
     events?.error(data.info);
   if (
     data.event === 'infoDelivery' &&
@@ -140,12 +150,14 @@ window.addEventListener('message', (e: MessageEvent) => {
       videoData?: { video_id?: unknown; author?: unknown };
     };
     const { video_id: videoId, author } = info.videoData ?? {};
+    if (typeof videoId === 'string') reportedVideoId = videoId;
+    const isCurrent = isRequestedVideo(reportedVideoId, youtubeEmbed.current());
     if (typeof videoId === 'string' && typeof author === 'string' && author)
       events?.author(videoId, author);
-    if (typeof info.currentTime === 'number')
+    if (isCurrent && typeof info.currentTime === 'number')
       events?.time(info.currentTime, info.duration ?? 0);
     // State changes also arrive here, often without a separate onStateChange.
-    if (typeof info.playerState === 'number') {
+    if (isCurrent && typeof info.playerState === 'number') {
       if (info.playerState === ENDED) events?.ended();
       else if (info.playerState >= PLAYING)
         events?.playing(
@@ -168,6 +180,11 @@ export const youtubeEmbed = {
   current(): string | null {
     return videoId;
   },
+  /** Forgets the previous selection while a new stream is being resolved. */
+  invalidate(): void {
+    videoId = null;
+    reportedVideoId = null;
+  },
   /**
    * `reload` asks for the video again even if it is the one loaded, and makes
    * a new player if the old one never answered (it was opened offline).
@@ -184,6 +201,7 @@ export const youtubeEmbed = {
       return;
     }
     videoId = id;
+    reportedVideoId = null;
     post(autoplay ? 'loadVideoById' : 'cueVideoById', [
       { videoId: id, startSeconds: Math.floor(start) },
     ]);

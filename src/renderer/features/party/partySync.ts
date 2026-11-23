@@ -22,7 +22,7 @@ import type { PartyState } from '../../../shared/schemas/party';
 
 /**
  * Makes the player follow the party, and the party follow this player: a
- * port of BitChord's PartySync.
+ * counterpart to BitChord's PartySync.
  *
  * The two directions use different doors (player.ts). Outbound, the player
  * calls `intent` after anything the listener does and whenever the queue
@@ -45,18 +45,8 @@ const INTENT_QUIET_MS = 4_500;
 const MAX_UPCOMING = 25;
 /** Songs with no video id yet that one publish looks up on YouTube Music. */
 const LOOKUPS = 10;
-/**
- * YouTube's player carries on some 300 to 500 ms after a seek, a different
- * amount each time. A seek is aimed ahead by the usual figure, and what is
- * left is closed without another re-buffer, by playing a touch fast or slow.
- */
+/** YouTube can take a little while to settle after seeking. */
 const STREAM_SEEK_LAG_MS = 350;
-/** Closer to the party than this is close enough. */
-const NUDGE_OVER_MS = 40;
-/** Further than this is a seek's job. */
-const NUDGE_UNDER_MS = 1_500;
-/** How much faster or slower a nudge plays (YouTube's player has quarter steps): gently for a small gap. */
-const nudgeRate = (offMs: number) => (offMs > 400 ? 0.5 : 0.25);
 
 // --- Songs across the boundary --------------------------------------------------
 
@@ -164,11 +154,6 @@ let drift = newDrift();
 /** This device's own songs the party hasn't been given yet; they follow as the queue moves on. */
 let tail: Playable[] = [];
 let stash: PlayerStash | null = null;
-/** Nudges still allowed for the landing being settled, so a correction can't go on for ever. */
-let trims = 0;
-/** True while the song plays fast or slow to close a gap; nothing is measured meanwhile. */
-let nudging = false;
-let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
 /** The song the host last offered an empty party, so one it can't share isn't offered forever. */
 let seeded: string | null = null;
 let wasIn: string | null = null;
@@ -406,7 +391,6 @@ function pauseAlone(): void {
 /** Measures the clock again and lands on the party's place, whatever the drift. */
 export function resyncParty(): void {
   drift = newDrift();
-  trims = 2;
   quietUntil = 0;
   void window.wavebit.party.resync().catch(() => {});
   reconcile();
@@ -451,7 +435,6 @@ function reconcile(): void {
   }
   if (!state.isPlaying) {
     awaiting = false;
-    endNudge();
     if (partyPlayer.wantsPlaying()) partyPlayer.pause();
     if (
       Math.abs(partyPlayer.positionMs() - state.positionMs) >
@@ -476,7 +459,6 @@ function reconcile(): void {
     if (Math.abs(partyPlayer.positionMs() - want) > PAUSED_TOLERANCE_MS)
       partyPlayer.seekTo(want / 1000);
     awaiting = false;
-    trims = 2;
     partyPlayer.play();
     return;
   }
@@ -494,41 +476,12 @@ function reconcile(): void {
     drift.strikes = 0;
     return;
   }
-  if (nudging) return;
   const ahead = partyPlayer.positionMs() - want;
-  const off = Math.abs(ahead);
-  // Settling a landing: what a seek or a start left over is closed by a nudge or two.
-  if (trims > 0 && off <= NUDGE_UNDER_MS) {
-    trims--;
-    if (off > NUDGE_OVER_MS) return nudge(ahead);
-    trims = 0;
-  }
   if (!shouldSeek(drift, state, ahead, performance.now())) return;
-  if (off <= NUDGE_UNDER_MS) {
-    trims = 1;
-    return nudge(ahead);
-  }
-  trims = 3;
-  // A file carries on at once; only a stream is aimed ahead.
+  // Keep both local files and streams at normal speed. A stream seek is aimed
+  // ahead to account for the embed's variable seek latency.
   const lag = partyPlayer.isStream() ? STREAM_SEEK_LAG_MS : 0;
   partyPlayer.seekTo((want + lag) / 1000);
-}
-
-/** Plays a touch fast (when behind) or slow for exactly as long as closes the gap. */
-function nudge(aheadMs: number): void {
-  const off = Math.abs(aheadMs);
-  const by = nudgeRate(off);
-  nudging = true;
-  partyPlayer.setRate(aheadMs < 0 ? 1 + by : 1 - by);
-  clearTimeout(nudgeTimer);
-  nudgeTimer = setTimeout(endNudge, off / by);
-}
-
-function endNudge(): void {
-  if (!nudging) return;
-  clearTimeout(nudgeTimer);
-  nudging = false;
-  partyPlayer.setRate(1);
 }
 
 /** Puts the party's songs in the player, at the party's place. */
@@ -547,8 +500,6 @@ function load(party: PartyState): void {
   // Someone else chose this song, so what this device had lined up is over.
   tail = [];
   drift = newDrift();
-  endNudge();
-  trims = 3;
   partyPlayer.load(
     items.map(fromPartyTrack),
     Math.max(0, at),
@@ -598,8 +549,6 @@ function reset(): void {
   awaitQueueSeq = Infinity;
   tail = [];
   seeded = null;
-  trims = 0;
-  endNudge();
   drift = newDrift();
 }
 
