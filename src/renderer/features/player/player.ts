@@ -1180,9 +1180,15 @@ function resume(): void {
   if (streaming) {
     const track = player.current();
     const loaded = youtubeEmbed.current();
-    // A restored queue has no matching embed video. A cued video should be
-    // played in place instead of being loaded again at its scheduled start.
-    if (track && (!loaded || loaded !== track.stream?.videoId || state.offline))
+    // A restored queue hasn't asked YouTube for anything yet; a song that
+    // never started, or stopped for want of a connection, is asked for again.
+    if (
+      track &&
+      (!loaded ||
+        loaded !== track.stream?.videoId ||
+        !streamStarted ||
+        state.offline)
+    )
       void loadStream(track, true, state.position, true);
     // The button answers at once; the embed's own state report confirms it.
     else {

@@ -124,14 +124,20 @@ window.addEventListener('message', (e: MessageEvent) => {
     for (const c of queued) post(c.func, c.args);
   }
   // State-change events carry no video id, so only use the last video identity
-  // the iframe reported. Non-ended states also arrive in infoDelivery, where
-  // the video identity can be checked on the same message.
+  // the iframe reported. This also rejects late playing/error events from an
+  // earlier track after the player has selected a new one.
   if (
     data.event === 'onStateChange' &&
-    data.info === ENDED &&
+    typeof data.info === 'number' &&
     isRequestedVideo(reportedVideoId, videoId)
-  )
-    events?.ended();
+  ) {
+    if (data.info === ENDED) events?.ended();
+    else
+      events?.playing(
+        data.info === PLAYING || data.info === BUFFERING,
+        data.info === BUFFERING,
+      );
+  }
   if (
     data.event === 'onError' &&
     typeof data.info === 'number' &&
