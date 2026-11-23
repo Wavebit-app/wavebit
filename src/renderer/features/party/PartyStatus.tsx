@@ -49,7 +49,7 @@ function Ping() {
       <Tooltip.Content placement="bottom end" offset={10} className="p-3">
         <div className="flex w-56 flex-col gap-2 text-left">
           <span className="text-sm font-semibold text-foreground">
-            {link.warn ? 'Reconnecting' : synced ? 'In sync' : 'Measuring'}
+            {link.status}
           </span>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
             {synced && <Fact label="Round trip">{trip} ms</Fact>}

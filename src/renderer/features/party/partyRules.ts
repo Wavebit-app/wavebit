@@ -8,11 +8,10 @@ import { DEFAULT_PARTY_SERVER } from '../../../shared/schemas/party.ts';
 
 /**
  * Listen together's rules, apart from the player and the window so they can
- * be tested. The timing ones are BitChord's PartySync, number for number.
+ * be tested. The drift thresholds follow BitChord's PartySync while avoiding
+ * audible rate changes during correction.
  */
 
-/** A new control is landed on within this. */
-const ALIGN_TOLERANCE_MS = 120;
 /** Between controls, drift has to pass this twice in a row to be corrected… */
 const DRIFT_LIMIT_MS = 1_200;
 const DRIFT_STRIKES = 2;
@@ -132,8 +131,7 @@ export function shouldSeek(
   now: number,
 ): boolean {
   if (playback.seq !== memory.alignedSeq) {
-    // A control is landed on exactly, even by the device that sent it. A
-    // change to the queue alone raises nothing here.
+    // A queue-only change raises the seq but should not provoke a seek.
     const moved =
       memory.anchorMs !== playback.anchorMs ||
       memory.positionMs !== playback.positionMs ||
@@ -144,7 +142,13 @@ export function shouldSeek(
     memory.positionMs = playback.positionMs;
     memory.trackId = playback.track?.videoId ?? null;
     memory.isPlaying = playback.isPlaying;
-    if (moved && Math.abs(driftMs) > ALIGN_TOLERANCE_MS) return true;
+    // Treat a new control like normal drift: don't jump for sub-threshold
+    // differences. A correction starts the same cooldown as a later one.
+    if (moved && Math.abs(driftMs) > DRIFT_LIMIT_MS) {
+      memory.strikes = 0;
+      memory.cooldownUntil = now + DRIFT_COOLDOWN_MS;
+      return true;
+    }
   }
   if (Math.abs(driftMs) <= DRIFT_LIMIT_MS) {
     memory.strikes = 0;
@@ -162,6 +166,53 @@ export type PingLevel = 'good' | 'slow' | 'poor';
 /** The round trip bounds the clock's error at half of itself. */
 export const pingLevel = (roundTripMs: number): PingLevel =>
   roundTripMs < 150 ? 'good' : roundTripMs <= 400 ? 'slow' : 'poor';
+
+export type PartyConnection =
+  | 'offline'
+  | 'connecting'
+  | 'unstable'
+  | 'reconnecting'
+  | 'live';
+
+export interface LinkStatus {
+  text: string;
+  status: string;
+  warn: boolean;
+}
+
+/** User-facing state for this device's link to the party server. */
+export function linkStatus(
+  connection: PartyConnection,
+  synced: boolean,
+  roundTripMs: number,
+): LinkStatus {
+  switch (connection) {
+    case 'connecting':
+      return { text: 'Connecting…', status: 'Connecting', warn: false };
+    case 'unstable':
+      return {
+        text: 'Connection unstable',
+        status: 'Connection unstable',
+        warn: true,
+      };
+    case 'reconnecting':
+      return { text: 'Reconnecting…', status: 'Reconnecting', warn: true };
+    case 'live':
+      return synced
+        ? {
+            text: `${roundTripMs} ms`,
+            status: 'In sync',
+            warn: false,
+          }
+        : {
+            text: 'Checking connection…',
+            status: 'Checking connection',
+            warn: false,
+          };
+    case 'offline':
+      return { text: 'Offline', status: 'Offline', warn: false };
+  }
+}
 
 /**
  * The link to share. With an invite page published (`page`, ending in

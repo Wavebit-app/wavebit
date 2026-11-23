@@ -73,7 +73,7 @@ export interface PartySession {
   hostOnlyControl: boolean;
   playback: PartyPlayback;
   queue: PartyQueue;
-  connection: 'offline' | 'connecting' | 'live';
+  connection: 'offline' | 'connecting' | 'unstable' | 'reconnecting' | 'live';
   /** False until the first round trip; the playhead is a guess until then. */
   clockSynced: boolean;
   roundTripMs: number;
