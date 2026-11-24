@@ -142,6 +142,11 @@ const api: WavebitApi = {
     probe: () => invoke(Channels.partyProbe),
     resync: () => invoke(Channels.partyResync),
   },
+  discord: {
+    status: () => invoke(Channels.discordStatus),
+    publish: (playback) => invoke(Channels.discordPublish, playback),
+    retry: () => invoke(Channels.discordRetry),
+  },
   on(event, listener) {
     if (!EVENT_NAMES.includes(event as EventName))
       throw new Error(`Unknown event ${event}`);

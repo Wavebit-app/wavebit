@@ -39,6 +39,12 @@ export const PlaybackSpeedSchema = z.union([
 ]);
 /** Spotify's three normalisation levels: -23, -14 and -11 LUFS. */
 export const LoudnessLevelSchema = z.enum(['quiet', 'normal', 'loud']);
+export const DiscordActivityTypeSchema = z.enum([
+  'playing',
+  'listening',
+  'watching',
+  'competing',
+]);
 
 /** Songs downloading at once. */
 export const DownloadConcurrencySchema = z.union([
@@ -130,6 +136,12 @@ export const SettingsSchema = z
     downloadSyncLists: z.boolean(),
     /** Off hides Listen together everywhere, and the party server is never contacted. */
     partyEnabled: z.boolean(),
+    /** Publishes the current song through the local Discord desktop client. */
+    discordPresenceEnabled: z.boolean(),
+    discordActivityType: DiscordActivityTypeSchema,
+    discordShowAlbum: z.boolean(),
+    discordShowArtwork: z.boolean(),
+    discordShowProgress: z.boolean(),
     /** A song picked in a party plays for everyone at once, or joins the party's queue. */
     partyPick: z.enum(['everyone', 'queue']),
     /** Plays this device earlier (above zero) or later than the party, for speakers that lag. */
@@ -231,6 +243,11 @@ export const DEFAULT_SETTINGS: Settings = {
   downloadSkipOwned: true,
   downloadSyncLists: false,
   partyEnabled: true,
+  discordPresenceEnabled: false,
+  discordActivityType: 'listening',
+  discordShowAlbum: true,
+  discordShowArtwork: true,
+  discordShowProgress: true,
   partyPick: 'everyone',
   partyDelayMs: 0,
   partyBanner: true,

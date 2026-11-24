@@ -245,6 +245,7 @@
   /* The services' brand colours, for their marks only (design/BrandMarks.tsx). */
   --color-brand-spotify: #1db954;
   --color-brand-youtube: #ff0000;
+  --color-brand-discord: #5865f2;
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
 }
 

@@ -16,7 +16,11 @@ import {
   Users,
 } from 'lucide-react';
 import type { ComponentType, ReactNode } from 'react';
-import { SpotifyMark, YouTubeMusicMark } from '../design/BrandMarks';
+import {
+  DiscordMark,
+  SpotifyMark,
+  YouTubeMusicMark,
+} from '../design/BrandMarks';
 import { nav, useNav, type Route, type SettingsSection } from '../app/router';
 import { useAppInfo, useSettings, useUpdateSettings } from '../lib/queries';
 import { SettingsSearch } from '../features/settings/SettingsSearch';
@@ -85,6 +89,7 @@ export const SETTINGS_SECTIONS: {
     icon: YouTubeMusicMark,
     group: 'Accounts',
   },
+  { id: 'discord', label: 'Discord', icon: DiscordMark, group: 'Accounts' },
   { id: 'about', label: 'About', icon: Info, group: 'App' },
 ];
 

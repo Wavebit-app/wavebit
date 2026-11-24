@@ -16,6 +16,19 @@ export declare class Cache {
   purgeExpired(): number
 }
 
+/**
+ * One Discord local RPC connection. It receives only settings and playback
+ * display data from the main process, never a credential or arbitrary path.
+ */
+export declare class DiscordPresence {
+  constructor(clientId: string, onStatus: ((arg: string) => unknown))
+  enable(enabled: boolean): void
+  setActivity(jsonText: string): void
+  clear(): void
+  retry(): void
+  shutdown(waitMs: number): void
+}
+
 export declare class Library {
   /** Everything Home shows, in one read. */
   home(): HomeFeed

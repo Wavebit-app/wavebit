@@ -14,6 +14,7 @@ export type SettingsSection =
   | 'party'
   | 'spotify'
   | 'youtube'
+  | 'discord'
   | 'library'
   | 'playback'
   | 'content'

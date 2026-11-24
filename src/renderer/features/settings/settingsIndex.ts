@@ -4,6 +4,7 @@ type Section =
   | 'party'
   | 'spotify'
   | 'youtube'
+  | 'discord'
   | 'library'
   | 'playback'
   | 'content'
@@ -24,6 +25,7 @@ export const SECTION_TITLES: Record<Section, string> = {
   appearance: 'Appearance',
   spotify: 'Spotify',
   youtube: 'YouTube Music',
+  discord: 'Discord',
   library: 'Library',
   playback: 'Playback',
   party: 'Listen together',
@@ -462,6 +464,38 @@ export const SETTINGS: SettingEntry[] = [
       'What wavebit reads',
       'Your playlists, liked videos and subscriptions, read-only.',
       'permissions privacy data api',
+    ],
+  ]),
+  ...group('discord', 'Presence', [
+    [
+      'discordPresenceEnabled',
+      'Show what I’m listening to',
+      'Uses a compatible local Discord RPC client such as Discord or Vesktop. Off by default.',
+      'rich presence rpc activity privacy listening status share song',
+    ],
+    [
+      'discordActivityType',
+      'Activity type',
+      'How Discord labels wavebit while music is playing.',
+      'playing listening watching competing type',
+    ],
+    [
+      'discordShowAlbum',
+      'Show album name',
+      'Adds the album beside the artist.',
+      'metadata privacy',
+    ],
+    [
+      'discordShowArtwork',
+      'Show album artwork',
+      'Sends an eligible public cover image URL to Discord.',
+      'cover image privacy artwork',
+    ],
+    [
+      'discordShowProgress',
+      'Show playback progress',
+      'Shows the song’s elapsed and remaining time in Discord.',
+      'timestamp progress duration elapsed',
     ],
   ]),
   ...group('about', 'wavebit', [

@@ -2,6 +2,7 @@
 //! The renderer never reaches this module directly; it goes through IPC.
 
 mod cache;
+mod discord;
 mod library;
 mod matcher;
 mod party;
@@ -11,6 +12,7 @@ use napi::{Error, Status};
 use napi_derive::napi;
 
 pub use cache::Cache;
+pub use discord::DiscordPresence;
 pub use library::Library;
 
 #[napi]
