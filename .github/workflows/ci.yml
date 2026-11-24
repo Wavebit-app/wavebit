@@ -84,6 +84,8 @@ jobs:
           npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts --allow-same-version
       - name: Build installers
         env:
+          # Public Discord application ID used for local Rich Presence.
+          WAVEBIT_DISCORD_CLIENT_ID: ${{ vars.WAVEBIT_DISCORD_CLIENT_ID }}
           # Each platform turns on when its secrets exist (.github/RELEASING.md).
           # Scoped by OS: electron-builder would sign Windows with a macOS CSC_LINK.
           CSC_LINK: ${{ runner.os == 'macOS' && secrets.CSC_LINK || '' }}

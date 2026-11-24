@@ -9,6 +9,7 @@ import {
 } from '../features/explore/ExplorePage';
 import { HomePage } from '../features/home/HomePage';
 import { Onboarding } from '../features/onboarding/Onboarding';
+import { DiscordBridge } from '../features/player/DiscordBridge';
 import { player, type PlaybackOptions } from '../features/player/player';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { PlaylistPage } from '../features/spotify/PlaylistPage';
@@ -103,6 +104,7 @@ export function App() {
   if (settings.setupStep < 4) return <Onboarding settings={settings} />;
   return (
     <AppShell settings={settings}>
+      <DiscordBridge />
       <Page />
     </AppShell>
   );
