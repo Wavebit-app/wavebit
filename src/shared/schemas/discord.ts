@@ -54,7 +54,8 @@ export const DiscordReportSchema = z
     status: DiscordStatusSchema,
     user: DiscordUserSchema.nullable(),
     client: z.string().max(40).nullable(),
-    problem: z.literal('rejected').nullable(),
+    /** rejected: Discord refused the last card. app_id: it doesn't know the application id. */
+    problem: z.enum(['rejected', 'app_id']).nullable(),
     showing: z.boolean(),
     sentAt: z.number().int().nonnegative().nullable(),
   })
@@ -95,4 +96,6 @@ export interface DiscordState extends DiscordReport {
   hidden: DiscordHidden | null;
   /** The song the card is for, for the title bar's hover card. */
   song: { title: string; artist: string } | null;
+  /** Where the Discord application id in use came from; null when there is none. */
+  appIdSource: 'settings' | 'launch' | 'build' | null;
 }

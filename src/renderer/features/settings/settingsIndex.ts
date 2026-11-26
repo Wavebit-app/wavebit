@@ -480,6 +480,14 @@ export const SETTINGS: SettingEntry[] = [
       'incognito hide private session pause sharing',
     ],
   ]),
+  ...group('discord', 'Application', [
+    [
+      'discordClientId',
+      'Discord application ID',
+      'The application your card is published as. Discord shows its name after “Listening to”.',
+      'client id app id developer portal application not configured',
+    ],
+  ]),
   ...group('discord', 'Card', [
     [
       'discordActivityType',

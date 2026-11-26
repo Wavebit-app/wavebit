@@ -48,6 +48,8 @@ export const DiscordActivityTypeSchema = z.enum([
 ]);
 /** The bold line beside the name in member lists: artist, song or wavebit. */
 export const DiscordStatusDisplaySchema = z.enum(['artist', 'title', 'app']);
+/** A Discord application id: public, 17 to 20 digits. Empty uses the one built in. */
+export const DiscordClientIdSchema = z.string().regex(/^(\d{17,20})?$/);
 /** Button labels before {song_name} and the rest are filled in; cut to 32 after. */
 const DiscordLabelSchema = z.string().max(64);
 
@@ -143,6 +145,8 @@ export const SettingsSchema = z
     partyEnabled: z.boolean(),
     /** Publishes the current song through the local Discord desktop client. */
     discordPresenceEnabled: z.boolean(),
+    /** The Discord application the card is published as; empty uses the build's. */
+    discordClientId: DiscordClientIdSchema,
     discordActivityType: DiscordActivityTypeSchema,
     discordShowAlbum: z.boolean(),
     discordShowArtwork: z.boolean(),
@@ -266,6 +270,7 @@ export const DEFAULT_SETTINGS: Settings = {
   downloadSyncLists: false,
   partyEnabled: true,
   discordPresenceEnabled: false,
+  discordClientId: '',
   discordActivityType: 'listening',
   discordShowAlbum: true,
   discordShowArtwork: true,

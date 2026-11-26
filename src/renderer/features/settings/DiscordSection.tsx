@@ -52,9 +52,13 @@ function AccountCard({
   let line: React.ReactNode = 'Presence is off.';
   if (status === 'not_configured') {
     dot = null;
-    line = 'This build of wavebit has no Discord application.';
+    line = 'Add a Discord application ID under Application to turn this on.';
   } else if (!enabled) {
     dot = 'off';
+  } else if (!connected && state?.problem === 'app_id') {
+    // Checked before "connecting": wavebit keeps retrying, which would hide it.
+    dot = 'warning';
+    line = 'Discord didn’t accept the application ID.';
   } else if (status === 'connecting') {
     dot = 'faint';
     line = 'Looking for Discord…';
@@ -142,6 +146,119 @@ function AccountCard({
         </p>
       )}
     </>
+  );
+}
+
+const APP_ID = /^\d{17,20}$/;
+const PORTAL = 'https://discord.com/developers/applications';
+
+/**
+ * The Discord application the card is published as. Its ID is public, not a
+ * secret; Discord shows the application's name after "Listening to".
+ */
+function ApplicationId({
+  saved,
+  source,
+  refused,
+  onSave,
+}: {
+  saved: string;
+  source: DiscordState['appIdSource'];
+  refused: boolean;
+  onSave: (id: string) => void;
+}) {
+  const [draft, setDraft] = useState(saved);
+  const editing = useRef(false);
+  const save = useRef(onSave);
+  save.current = onSave;
+  useEffect(() => {
+    if (!editing.current) setDraft(saved);
+  }, [saved]);
+
+  const value = draft.trim();
+  const invalid = value !== '' && !APP_ID.test(value);
+  const commit = () => {
+    editing.current = false;
+    if (!invalid && value !== saved) save.current(value);
+  };
+  // Saved a moment after a valid ID is typed or pasted, and on leaving the field.
+  useEffect(() => {
+    if (invalid || value === saved) return;
+    const timer = setTimeout(() => save.current(value), 600);
+    return () => clearTimeout(timer);
+  }, [invalid, value, saved]);
+
+  const note = invalid
+    ? 'An application ID is 17 to 20 digits.'
+    : refused
+      ? 'Discord didn’t accept this ID. Check that it is the Application ID from the developer portal.'
+      : source === 'launch' && !value
+        ? 'Using the ID wavebit was started with.'
+        : source === 'build' && !value
+          ? 'Using the ID built into this copy of wavebit. Paste another to use your own.'
+          : !value
+            ? 'This copy of wavebit has none built in, so paste yours here.'
+            : null;
+
+  return (
+    <Group
+      title="Application"
+      footer={
+        <>
+          Make one at{' '}
+          <a
+            href={PORTAL}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-accent underline-offset-2 hover:underline"
+          >
+            discord.com/developers/applications
+          </a>
+          : New Application, name it wavebit (Discord shows that name after
+          “Listening to”), then copy its Application ID. It is public, not a
+          secret.
+        </>
+      }
+    >
+      <div
+        data-setting="discordClientId"
+        className="flex flex-col gap-2 px-4 py-3"
+      >
+        <span className="flex flex-col gap-0.5">
+          <span className="font-medium">
+            {setting('discordClientId').label}
+          </span>
+          <span className="text-sm text-muted">
+            {setting('discordClientId').hint}
+          </span>
+        </span>
+        <TextField
+          aria-label="Discord application ID"
+          value={draft}
+          onChange={(next) => setDraft(next.replace(/\s+/g, ''))}
+          onFocus={() => (editing.current = true)}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === 'Enter' && commit()}
+          isInvalid={invalid}
+          maxLength={20}
+        >
+          <Input
+            placeholder="For example 1234567890123456789"
+            inputMode="numeric"
+            autoComplete="off"
+            className="font-mono tabular-nums"
+          />
+        </TextField>
+        {note && (
+          <span
+            role={invalid || refused ? 'alert' : undefined}
+            className={`text-sm ${invalid || refused ? 'text-danger' : 'text-muted'}`}
+          >
+            {note}
+          </span>
+        )}
+      </div>
+    </Group>
   );
 }
 
@@ -363,7 +480,6 @@ export function DiscordSection() {
         <SettingSwitch
           id="discordPresenceEnabled"
           isSelected={enabled}
-          isDisabled={state?.status === 'not_configured'}
           onChange={(discordPresenceEnabled) => set({ discordPresenceEnabled })}
         />
         <SettingSwitch
@@ -373,6 +489,13 @@ export function DiscordSection() {
           onChange={setDiscordPrivate}
         />
       </Group>
+
+      <ApplicationId
+        saved={settings.discordClientId}
+        source={state?.appIdSource ?? null}
+        refused={state?.problem === 'app_id'}
+        onSave={(discordClientId) => set({ discordClientId })}
+      />
 
       <Group
         title="Preview"

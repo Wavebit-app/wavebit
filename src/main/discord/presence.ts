@@ -20,6 +20,8 @@ import { makeDiscordCard, type PlaybackAt } from './presenceRules';
 const FILE_ID = /^[0-9a-f]{16}$/;
 
 let client: NativePresence | null = null;
+/** The application id `client` was made for. */
+let clientId = '';
 let started = false;
 let enabled = false;
 let playback: PlaybackAt | null = null;
@@ -40,7 +42,9 @@ let state: DiscordState = {
   card: null,
   hidden: 'off',
   song: null,
+  appIdSource: null,
 };
+let appIdSource: DiscordState['appIdSource'] = null;
 const listeners = new Set<(state: DiscordState) => void>();
 
 /** Each file's quality, read once per run; files don't change format while playing. */
@@ -74,6 +78,7 @@ function announce(card = currentCard()): void {
     card: card.activity,
     hidden: card.hidden,
     song: playback ? { title: playback.title, artist: playback.artist } : null,
+    appIdSource,
   };
   if (JSON.stringify(next) === JSON.stringify(state)) return;
   state = next;
@@ -81,17 +86,54 @@ function announce(card = currentCard()): void {
   for (const listener of listeners) listener(state);
 }
 
+const IDLE: DiscordReport = {
+  status: 'disabled',
+  user: null,
+  client: null,
+  problem: null,
+  showing: false,
+  sentAt: null,
+};
+
+/** A new id (typed in Settings) needs a new connection: the old one is closed first. */
+function useClientFor(id: string): void {
+  if (id === clientId && (client || !id)) return;
+  const old = client;
+  client = null;
+  enabled = false;
+  lastSent = '';
+  clientId = id;
+  report = { ...IDLE, status: id ? 'disabled' : 'not_configured' };
+  old?.shutdown(500);
+  if (!id) return;
+  try {
+    client = new (native().DiscordPresence)(id, (raw: string) => {
+      // Reports from a client that has since been replaced are dropped.
+      if (clientId === id) onReport(raw);
+    });
+  } catch {
+    client = null;
+  }
+}
+
 function apply(): void {
   const settings = readSettings();
-  const id = discordClientId();
-  if (!settings.discordPresenceEnabled || !id || !client) {
+  const { id, source } = discordClientId(settings.discordClientId);
+  appIdSource = source;
+  useClientFor(id);
+  if (!settings.discordPresenceEnabled || !client) {
     if (client && enabled) client.enable(false);
     enabled = false;
     lastSent = '';
-    if (!id && settings.discordPresenceEnabled)
-      report = { ...report, status: 'not_configured' };
-    else if (!client && settings.discordPresenceEnabled && id)
-      report = { ...report, status: 'waiting' };
+    report = {
+      ...IDLE,
+      // Off, no id to use, or on with an id whose client couldn't start.
+      status: !id
+        ? 'not_configured'
+        : settings.discordPresenceEnabled
+          ? 'waiting'
+          : 'disabled',
+    };
     announce();
     return;
   }
@@ -124,14 +166,6 @@ function onReport(raw: string): void {
 export function startDiscordPresence(): void {
   if (started) return;
   started = true;
-  const id = discordClientId();
-  if (id) {
-    try {
-      client = new (native().DiscordPresence)(id, onReport);
-    } catch {
-      client = null;
-    }
-  }
   onSettingsChange(apply);
   apply();
 }
@@ -170,6 +204,7 @@ export function retryDiscord(): void {
 export function stopDiscordPresence(): void {
   const owned = client;
   client = null;
+  clientId = '';
   enabled = false;
   playback = null;
   lastSent = '';
