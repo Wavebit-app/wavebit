@@ -1,9 +1,10 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { app, shell, type BrowserWindow } from 'electron';
 import { AppError } from '../../shared/errors';
+import { killTree } from '../process/killTree';
 import { Events } from '../../shared/ipc/channels';
 import {
   downloadKey,
@@ -851,22 +852,6 @@ export function startDownloads(): void {
     .catch(() => {})
     .finally(pump);
   app.on('before-quit', stopAll);
-}
-
-/** yt-dlp starts Deno and more; on Windows a survivor would lock its .exe. */
-export function killTree(child: ChildProcess): void {
-  if (process.platform !== 'win32' || !child.pid) {
-    child.kill();
-    return;
-  }
-  const taskkill = path.join(
-    process.env.SystemRoot ?? 'C:\\Windows',
-    'System32',
-    'taskkill.exe',
-  );
-  spawnSync(taskkill, ['/PID', String(child.pid), '/T', '/F'], {
-    windowsHide: true,
-  });
 }
 
 function stopAll(): ChildProcess[] {

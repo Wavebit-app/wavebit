@@ -23,6 +23,7 @@ import { IconButton, SeekBar, Transport, Volume } from './controls';
 import { SpotifyCanvas } from './Canvas';
 import { usePlayer, useStreaming } from './player';
 import { VideoSlot } from './VideoSlot';
+import { VideoQualityMenu } from './NowPlayingPanel';
 import { useVideoStage } from './videoStage';
 
 /**
@@ -134,6 +135,7 @@ export function FullPlayer() {
         <PartyButton size={40} onOpen={close} />
         <Volume width={roomy ? 160 : 100} />
         <span className="flex-1" />
+        {streaming && <VideoQualityMenu />}
         {streaming && (
           <IconButton
             label="Video on its own"

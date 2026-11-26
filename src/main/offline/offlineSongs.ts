@@ -11,7 +11,6 @@ import path from 'node:path';
 import { app, net } from 'electron';
 import { Events } from '../../shared/ipc/channels';
 import {
-  killTree,
   outputFile,
   savedFileOf,
   spawnYtDlp,
@@ -19,6 +18,7 @@ import {
 } from '../downloads/downloads';
 import { VIDEO_ID } from '../downloads/downloadRules';
 import { emit } from '../ipc/handle';
+import { killTree } from '../process/killTree';
 import { readSettings } from '../services/settings';
 import {
   copyName,

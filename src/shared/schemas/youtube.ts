@@ -190,6 +190,37 @@ export const YtMatchSchema = z
   .strict();
 export type YtMatchQuery = z.infer<typeof YtMatchSchema>;
 
+/** A public YouTube stream request. Only a video id and supported height cross IPC. */
+export const YtStreamResolveSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    videoId: z.string().regex(/^[A-Za-z0-9_-]{11}$/),
+    maxHeight: z.number().int().min(144).max(1080),
+  })
+  .strict();
+export type YtStreamResolve = z.infer<typeof YtStreamResolveSchema>;
+
+/** Revoke an in-flight resolution and/or its opaque media lease. */
+export const YtStreamReleaseSchema = z
+  .object({
+    requestId: z.string().uuid().nullable(),
+    leaseId: z.string().uuid().nullable(),
+  })
+  .strict()
+  .refine((value) => value.requestId !== null || value.leaseId !== null);
+
+/** The renderer receives only this opaque lease and non-sensitive display facts. */
+export interface YtResolvedStream {
+  leaseId: string;
+  audioUrl: string;
+  videoUrl: string;
+  durationMs: number;
+  width: number;
+  height: number;
+  mimeType: string;
+  heights: number[];
+}
+
 /** A YouTube Music search. */
 export const YtSearchSchema = z
   .object({ query: z.string().trim().min(1).max(200) })

@@ -61,6 +61,8 @@ export const Channels = {
   youtubeSave: 'youtube:save',
   youtubeArtist: 'youtube:artist',
   youtubeMatch: 'youtube:match',
+  youtubeStreamResolve: 'youtube:streamResolve',
+  youtubeStreamRelease: 'youtube:streamRelease',
   youtubeRadio: 'youtube:radio',
   youtubeSearch: 'youtube:search',
   youtubeOAuthStatus: 'youtube:oauthStatus',

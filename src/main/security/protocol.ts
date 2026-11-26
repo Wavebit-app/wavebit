@@ -1,4 +1,4 @@
-import { app, net, protocol } from 'electron';
+import { net, protocol } from 'electron';
 import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -6,27 +6,14 @@ import { pathToFileURL } from 'node:url';
 import { offlineFile } from '../offline/offlineSongs';
 import { cachedImage } from '../services/artCache';
 import { artUrlFromPath, mediaCors } from './urls';
+import { streamMedia } from '../youtube/streams';
+import { isTrustedOrigin } from './origin';
+export { isTrustedOrigin } from './origin';
 
 export const APP_SCHEME = 'app';
 export const APP_HOST = 'wavebit';
 export const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 export const MEDIA_SCHEME = 'media';
-
-export function isTrustedOrigin(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    // Node reports the origin of a custom scheme as "null", so compare parts.
-    if (parsed.protocol === `${APP_SCHEME}:` && parsed.host === APP_HOST)
-      return true;
-    return (
-      !app.isPackaged &&
-      !!MAIN_WINDOW_VITE_DEV_SERVER_URL &&
-      parsed.origin === new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL).origin
-    );
-  } catch {
-    return false;
-  }
-}
 
 // The renderer talks to the main process over IPC, so it needs no network
 // access of its own. Spotify and YouTube artwork hosts are allowed for <img> only.
@@ -38,6 +25,7 @@ const CSP = [
   "font-src 'self' data:",
   "connect-src 'self'",
   // Spotify Canvas clips come from canvaz.scdn.co (Settings › Spotify › Canvas).
+  // Stream audio and video are proxied through the app's range checked media origin.
   `media-src 'self' ${MEDIA_SCHEME}: https://*.scdn.co`,
   // YouTube's official embedded player, for songs wavebit has no file for.
   'frame-src https://www.youtube-nocookie.com',
@@ -156,6 +144,12 @@ export function serveMedia(source: () => MediaSource): void {
     const id = pathname.slice(1);
     const cors = mediaCors(request.headers.get('Origin'), isTrustedOrigin);
     if (!cors) return new Response('Forbidden', { status: 403 });
+
+    if (host === 'stream') {
+      const match = /^\/([0-9a-f-]{36})\/(audio|video)$/.exec(pathname);
+      if (!match) return new Response('Not found', { status: 404 });
+      return streamMedia(request, match[1]!, match[2]! as 'audio' | 'video');
+    }
 
     // A remote album cover, kept on disk (services/artCache.ts).
     if (host === 'remote') {

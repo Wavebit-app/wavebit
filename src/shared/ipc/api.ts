@@ -60,6 +60,8 @@ import type {
   YtLibrary,
   YtPage,
   YtStatus,
+  YtResolvedStream,
+  YtStreamResolve,
 } from '../schemas/youtube';
 import type {
   NotesTarget,
@@ -231,6 +233,13 @@ export interface WavebitApi {
     artist(browseId: string): Promise<YtArtist>;
     /** The YouTube Music song that is the same recording, or null. */
     match(song: YtMatchQuery): Promise<YtMatch | null>;
+    /** Resolves a public audio/video pair; CDN addresses stay in the main process. */
+    resolveStream(request: YtStreamResolve): Promise<YtResolvedStream>;
+    /** Cancels an in-flight resolution and/or revokes its media lease. */
+    releaseStream(
+      requestId: string | null,
+      leaseId: string | null,
+    ): Promise<void>;
     /** AutoPlay's next songs after this one (YouTube Music's radio). */
     radio(videoId: string): Promise<YtRadioSong[]>;
     /** YouTube Music's search, as shelves. */

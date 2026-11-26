@@ -92,6 +92,9 @@ const api: WavebitApi = {
       invoke(Channels.youtubeSave, { playlistId, saved }),
     artist: (browseId) => invoke(Channels.youtubeArtist, { browseId }),
     match: (song) => invoke(Channels.youtubeMatch, song),
+    resolveStream: (request) => invoke(Channels.youtubeStreamResolve, request),
+    releaseStream: (requestId, leaseId) =>
+      invoke(Channels.youtubeStreamRelease, { requestId, leaseId }),
     radio: (videoId) => invoke(Channels.youtubeRadio, { videoId }),
     search: (query) => invoke(Channels.youtubeSearch, { query }),
     oauth: {
