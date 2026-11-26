@@ -11,6 +11,7 @@ import type {
   PlaybackSpeed,
 } from '../../../shared/schemas/settings';
 import type { YtMatchQuery } from '../../../shared/schemas/youtube';
+import type { YtResolvedStream } from '../../../shared/schemas/youtube';
 import { forLyricsSearch, primaryArtist } from '../../../shared/lrc';
 import { sameRecording, songTitleOfVideo } from '../../../shared/lyricsParse';
 import { checkNow, isDown, markDown, onBack } from '../../lib/connection';
@@ -349,7 +350,7 @@ function applySpeed(): void {
     deck.el.defaultPlaybackRate = rate();
     if (deck !== A() || !skippingSilence) deck.el.playbackRate = rate();
   }
-  if (streaming) youtubeEmbed.setSpeed(rate());
+  if (streaming && embedStream) youtubeEmbed.setSpeed(rate());
 }
 
 // --- Sleep timer -----------------------------------------------------------------
@@ -357,7 +358,7 @@ function applySpeed(): void {
 let sleepTimer: ReturnType<typeof setTimeout> | undefined;
 
 function pauseAll(): void {
-  if (streaming) {
+  if (streaming && embedStream) {
     youtubeEmbed.pause();
     set({ playing: false, loading: false });
     return;
@@ -691,10 +692,72 @@ function beginBlend(): void {
 
 // --- Loading ---------------------------------------------------------------------
 
-// --- Streams: YouTube's embedded player ------------------------------------------
+// --- Streams: direct audio/video with the official embed as fallback ------------
 
-/** True while the current song plays in the embed rather than on a deck. */
+/** True while the current row is a YouTube stream rather than a local file. */
 let streaming = false;
+/** True when the official fallback iframe, rather than a deck, owns audio. */
+let embedStream = false;
+let directLeaseId: string | null = null;
+let directRequestId: string | null = null;
+export interface DirectVideoState {
+  active: boolean;
+  videoId: string | null;
+  leaseId: string | null;
+  url: string | null;
+  heights: number[];
+  height: number | null;
+  selectedHeight: number | null;
+  width: number;
+}
+const EMPTY_DIRECT_VIDEO: DirectVideoState = {
+  active: false,
+  videoId: null,
+  leaseId: null,
+  url: null,
+  heights: [],
+  height: null,
+  selectedHeight: null,
+  width: 0,
+};
+function autoVideoHeight(): number {
+  const connection = (
+    navigator as Navigator & {
+      connection?: { saveData?: boolean; type?: string };
+    }
+  ).connection;
+  return connection?.saveData || connection?.type === 'cellular' ? 480 : 1080;
+}
+let directVideo = EMPTY_DIRECT_VIDEO;
+let selectedVideoHeight: number | null = null;
+const directListeners = new Set<() => void>();
+function setDirectVideo(next: DirectVideoState): void {
+  directVideo = next;
+  for (const listener of directListeners) listener();
+}
+export function useDirectVideo(): DirectVideoState {
+  return useSyncExternalStore(
+    (listener) => (
+      directListeners.add(listener), () => directListeners.delete(listener)
+    ),
+    () => directVideo,
+  );
+}
+export function directAudioElement(): HTMLAudioElement | null {
+  return streaming && !embedStream ? A().el : null;
+}
+
+function releaseDirectStream(): void {
+  const requestId = directRequestId;
+  const leaseId = directLeaseId;
+  directRequestId = null;
+  directLeaseId = null;
+  if (requestId || leaseId)
+    void window.wavebit.youtube
+      .releaseStream(requestId, leaseId)
+      .catch(() => {});
+  setDirectVideo(EMPTY_DIRECT_VIDEO);
+}
 /** Bumped on every load, so a slow YouTube search can't start a song that was skipped. */
 let streamToken = 0;
 let endedFor: string | null = null;
@@ -746,13 +809,18 @@ async function loadStream(
   at: number,
   /** Asks YouTube for the video again, even if it is the one it has: a stuck start. */
   reload = false,
+  maxHeight?: number,
+  playAfterResolve = autoplay,
 ): Promise<void> {
   const token = ++streamToken;
+  if (!reload) directRetryUsed = false;
   const replacingStream = streaming;
   // A new queue entry can be scheduled for later. Stop the old iframe now;
   // otherwise it keeps sounding while the player already represents the new
   // track in state.
-  if (replacingStream) youtubeEmbed.pause();
+  if (replacingStream && embedStream) youtubeEmbed.pause();
+  if (replacingStream && !embedStream) A().el.pause();
+  releaseDirectStream();
   // Matching and the Music-only lookup can be asynchronous. Ignore reports
   // from the previous video during that gap as well.
   youtubeEmbed.invalidate();
@@ -763,6 +831,7 @@ async function loadStream(
   asked(at);
   // Until the new video is asked for, the embed still reports the last one's time.
   loadedId = null;
+  embedStream = false;
   endedFor = null;
   settleBlend();
   A().el.pause();
@@ -796,6 +865,8 @@ async function loadStream(
     if (token !== streamToken) return;
     if (audio) {
       id = audio;
+      // This is now an ordinary catalogue audio stream, so leave it on the
+      // existing embed route and do not request a picture for the video row.
       // Kept on the queue entry, so the next play of it doesn't search again.
       set({
         queue: state.queue.map((t) =>
@@ -824,7 +895,12 @@ async function loadStream(
   if (!autoplay) {
     // Cue known tracks ahead of a scheduled start. YouTube's cue command
     // prepares the player but does not fetch the media until Play or seek.
-    if (!isDown()) youtubeEmbed.load(id, at, false);
+    if (track.stream?.isVideo && id === track.stream.videoId) {
+      setDirectVideo({ ...EMPTY_DIRECT_VIDEO, active: true, videoId: id });
+    } else if (!isDown()) {
+      embedStream = true;
+      youtubeEmbed.load(id, at, false);
+    }
     return;
   }
   heardThisSession.add(id);
@@ -835,12 +911,162 @@ async function loadStream(
     else skipOffline();
     return;
   }
+
+  const isVideo = track.stream?.isVideo === true && id === track.stream.videoId;
+  if (isVideo) {
+    const requestId = crypto.randomUUID();
+    directRequestId = requestId;
+    setDirectVideo({
+      ...EMPTY_DIRECT_VIDEO,
+      active: true,
+      videoId: id,
+    });
+    try {
+      const resolved = await window.wavebit.youtube.resolveStream({
+        requestId,
+        videoId: id,
+        maxHeight: Math.min(
+          1080,
+          Math.max(144, maxHeight ?? selectedVideoHeight ?? autoVideoHeight()),
+        ),
+      });
+      if (token !== streamToken || directRequestId !== requestId) {
+        void window.wavebit.youtube
+          .releaseStream(requestId, resolved.leaseId)
+          .catch(() => {});
+        return;
+      }
+      directRequestId = null;
+      directLeaseId = resolved.leaseId;
+      embedStream = false;
+      startDirectStream(track, id, resolved, at, token, playAfterResolve);
+      prefetchNext();
+      return;
+    } catch {
+      if (token !== streamToken) return;
+      if (directRequestId === requestId) directRequestId = null;
+      void window.wavebit.youtube
+        .releaseStream(requestId, null)
+        .catch(() => {});
+      setDirectVideo(EMPTY_DIRECT_VIDEO);
+    }
+  }
+
+  // Native extraction is anonymous and public-only. The existing official
+  // player remains the compatibility path for restricted/unavailable streams.
+  embedStream = true;
   youtubeEmbed.setVolume(state.volume);
   youtubeEmbed.load(id, at, true, reload);
   loadedId = track.id;
   progressAt = performance.now();
   set({ playing: true });
   prefetchNext();
+}
+
+let directRetryUsed = false;
+
+function startDirectStream(
+  track: Playable,
+  videoId: string,
+  resolved: YtResolvedStream,
+  at: number,
+  token: number,
+  playAfterResolve: boolean,
+): void {
+  const deck = A();
+  settleBlend();
+  stopDeck(B());
+  deck.trackId = track.id;
+  deck.el.src = resolved.audioUrl;
+  deck.el.playbackRate = rate();
+  deck.el.load();
+  graph();
+  if (deck.level && ctx)
+    deck.level.gain.setTargetAtTime(1, ctx.currentTime, 0.05);
+  if (deck.fade && ctx)
+    deck.fade.gain.setTargetAtTime(1, ctx.currentTime, 0.05);
+  const start = () => {
+    if (token !== streamToken || !streaming || embedStream) return;
+    if (Number.isFinite(at) && at > 0 && Number.isFinite(deck.el.duration))
+      deck.el.currentTime = Math.min(at, Math.max(0, deck.el.duration - 0.1));
+    if (playAfterResolve && deck.el.paused)
+      void deck.el.play().catch(() => void fallbackDirectStream());
+    else if (!playAfterResolve) deck.el.pause();
+  };
+  deck.el.addEventListener('loadedmetadata', start, { once: true });
+  if (deck.el.readyState >= 1) start();
+  setDirectVideo({
+    active: true,
+    videoId,
+    leaseId: resolved.leaseId,
+    url: resolved.videoUrl,
+    heights: resolved.heights,
+    height: resolved.height,
+    selectedHeight: selectedVideoHeight,
+    width: resolved.width,
+  });
+  loadedId = track.id;
+  streamStarted = false;
+  progressAt = performance.now();
+  set({
+    duration: resolved.durationMs / 1000,
+    position: at,
+    playing: false,
+    loading: true,
+  });
+}
+
+async function fallbackDirectStream(): Promise<void> {
+  if (!streaming || embedStream) return;
+  const token = streamToken;
+  const track = player.current();
+  const videoId = track?.stream?.videoId;
+  if (!track || !videoId) return;
+  const position = Number.isFinite(A().el.currentTime)
+    ? A().el.currentTime
+    : state.position;
+  A().el.pause();
+  A().el.removeAttribute('src');
+  A().el.load();
+  releaseDirectStream();
+  if (token !== streamToken) return;
+  embedStream = true;
+  youtubeEmbed.setVolume(state.volume);
+  youtubeEmbed.load(videoId, Math.max(0, position), state.playing, true);
+  loadedId = track.id;
+  set({
+    position: Math.max(0, position),
+    loading: true,
+    playing: false,
+    error: false,
+  });
+}
+
+async function directVideoFailed(failedLeaseId: string | null): Promise<void> {
+  const current = directVideo;
+  const track = player.current();
+  if (
+    !current.active ||
+    current.leaseId !== failedLeaseId ||
+    !track ||
+    !track.stream?.videoId
+  )
+    return;
+  const lower = current.heights
+    .filter((height) => height < (current.height ?? 1080))
+    .sort((a, b) => b - a)[0];
+  if (!directRetryUsed && lower) {
+    directRetryUsed = true;
+    await loadStream(
+      track,
+      true,
+      A().el.currentTime || state.position,
+      true,
+      lower,
+    );
+    return;
+  }
+  await fallbackDirectStream();
 }
 
 // --- Keep playing offline ---------------------------------------------------------
@@ -888,7 +1114,10 @@ function playCopy(track: Playable, videoId: string, at: number): void {
   if (streaming) {
     streaming = false;
     streamToken++;
-    youtubeEmbed.pause();
+    if (embedStream) youtubeEmbed.pause();
+    else A().el.pause();
+    releaseDirectStream();
+    embedStream = false;
   }
   settleBlend();
   onCopy = true;
@@ -925,7 +1154,8 @@ onBack(() => {
 
 /** Pauses with "You're offline" on the song; onBack above starts it again. */
 function goneOffline(): void {
-  if (streaming) youtubeEmbed.pause();
+  if (streaming && embedStream) youtubeEmbed.pause();
+  else if (streaming) A().el.pause();
   set({ playing: false, loading: false, offline: true });
   reportListening();
   persist();
@@ -1067,7 +1297,7 @@ window.addEventListener('pagehide', () => {
 
 youtubeEmbed.on({
   playing: (playing, buffering) => {
-    if (!streaming) return;
+    if (!streaming || !embedStream) return;
     set({ playing, loading: playing && buffering });
     // Out of sound mid-song: look for the copy now rather than after a silence.
     // (Not just after a seek, which buffers too.)
@@ -1088,7 +1318,7 @@ youtubeEmbed.on({
     set({ queue });
   },
   time: (position, duration) => {
-    if (!streaming) return;
+    if (!streaming || !embedStream) return;
     if (
       performance.now() - askedAt < ASK_HOLD_MS &&
       Math.abs(position - askedPlace) > 3
@@ -1119,7 +1349,7 @@ youtubeEmbed.on({
   ended: () => {
     const id = youtubeEmbed.current();
     // YouTube reports the end twice (state change and info); act once.
-    if (!streaming || endedFor === id) return;
+    if (!streaming || !embedStream || endedFor === id) return;
     // The second report can land after the next video was asked for: it is
     // the last song's end, not this one's.
     if (askedAt !== 0 && performance.now() - askedAt < ASK_HOLD_MS) return;
@@ -1132,7 +1362,7 @@ youtubeEmbed.on({
     } else advance();
   },
   error: () => {
-    if (!streaming) return;
+    if (!streaming || !embedStream) return;
     set({ error: true, playing: false, loading: false });
     skipSoon(streamToken);
   },
@@ -1148,7 +1378,10 @@ function load(track: Playable, autoplay: boolean, at = 0): void {
   if (streaming) {
     streaming = false;
     streamToken++;
-    youtubeEmbed.pause();
+    if (embedStream) youtubeEmbed.pause();
+    else A().el.pause();
+    releaseDirectStream();
+    embedStream = false;
   }
   settleBlend();
   const deck = A();
@@ -1178,6 +1411,18 @@ function load(track: Playable, autoplay: boolean, at = 0): void {
 /** Plays the current song from where it is. */
 function resume(): void {
   if (streaming) {
+    if (!embedStream) {
+      const track = player.current();
+      if (!directVideo.active || state.offline || !A().el.currentSrc) {
+        if (track) void loadStream(track, true, state.position, true);
+      } else {
+        graph();
+        void A()
+          .el.play()
+          .catch(() => {});
+      }
+      return;
+    }
     const track = player.current();
     const loaded = youtubeEmbed.current();
     // A restored queue hasn't asked YouTube for anything yet; a song that
@@ -1274,7 +1519,8 @@ export const player = {
   next(): void {
     const next = following();
     if (!next) {
-      if (streaming) youtubeEmbed.pause();
+      if (streaming && embedStream) youtubeEmbed.pause();
+      else if (streaming) A().el.pause();
       settleBlend();
       A().el.pause();
       return;
@@ -1286,7 +1532,9 @@ export const player = {
   previous(): void {
     settleBlend();
     const restart = () =>
-      streaming ? youtubeEmbed.seek(0) : (A().el.currentTime = 0);
+      streaming && embedStream
+        ? youtubeEmbed.seek(0)
+        : (A().el.currentTime = 0);
     // Past ten seconds, Previous restarts the song (BitChord's BACK_RESTARTS_AFTER_SEC).
     if ((streaming ? state.position : A().el.currentTime) > 10) {
       restart();
@@ -1303,6 +1551,16 @@ export const player = {
   seek(seconds: number): void {
     if (!Number.isFinite(seconds)) return;
     if (streaming) {
+      if (!embedStream) {
+        A().el.currentTime = Math.max(
+          0,
+          Math.min(seconds, A().el.duration || seconds),
+        );
+        set({ position: A().el.currentTime });
+        notePlace();
+        persist();
+        return;
+      }
       asked(Math.max(0, seconds));
       youtubeEmbed.seek(Math.max(0, seconds));
       set({ position: Math.max(0, seconds) });
@@ -1318,7 +1576,7 @@ export const player = {
     const v = Math.max(0, Math.min(1, volume));
     if (master && ctx) master.gain.setTargetAtTime(v, ctx.currentTime, 0.02);
     else for (const deck of decks) deck.el.volume = v;
-    youtubeEmbed.setVolume(v);
+    if (embedStream) youtubeEmbed.setVolume(v);
     set({ volume: v });
   },
   toggleShuffle(): void {
@@ -1403,6 +1661,24 @@ export const player = {
       // Not remembered; it still applies now.
     }
     if (autoplay) void extendQueue();
+  },
+  setVideoQuality(height: number | null): void {
+    const track = player.current();
+    if (!streaming || !directVideo.active || !track) return;
+    selectedVideoHeight = height;
+    directRetryUsed = false;
+    const cap = height ?? autoVideoHeight();
+    void loadStream(
+      track,
+      true,
+      A().el.currentTime || state.position,
+      true,
+      cap,
+      state.playing,
+    );
+  },
+  directVideoFailed(leaseId: string | null): void {
+    void directVideoFailed(leaseId);
   },
   /** What plays after the current song, in play order. */
   upcoming(): { track: Playable; index: number }[] {
@@ -1542,6 +1818,12 @@ export const partyPlayer = {
       A().el.currentTime = seconds;
       return;
     }
+    if (!embedStream) {
+      A().el.currentTime = Math.max(0, seconds);
+      asked(seconds);
+      set({ position: Math.max(0, seconds) });
+      return;
+    }
     // Before the video is asked for, the place is only written down.
     const loaded = youtubeEmbed.current();
     if (loaded && loaded === player.current()?.stream?.videoId)
@@ -1553,6 +1835,7 @@ export const partyPlayer = {
   /** Where the song is right now. YouTube reports a few times a second, so the gap is counted in. */
   positionMs(): number {
     if (!streaming) return A().el.currentTime * 1000;
+    if (!embedStream) return A().el.currentTime * 1000;
     // Nothing is counted in until the video has reported from the place asked for.
     const since =
       state.playing && askedAt === 0
@@ -1567,7 +1850,7 @@ export const partyPlayer = {
   /** Really sounding, so its position can be compared with the party's. */
   settled(): boolean {
     if (!state.playing) return false;
-    if (streaming) return streamTicks >= 2;
+    if (streaming && embedStream) return streamTicks >= 2;
     const el = A().el;
     return !el.paused && !el.seeking && el.readyState >= 3;
   },
@@ -1606,8 +1889,8 @@ export const partyPlayer = {
 // Every event is filtered to the deck that is current; the other deck is either
 // idle or the song fading out.
 for (const deck of decks) {
-  // While YouTube's player has the song, a deck's late pause or time is the last song's.
-  const current = () => deck === A() && !streaming;
+  // Ignore stale deck events only while the iframe owns the current stream.
+  const current = () => deck === A() && (!streaming || !embedStream);
   deck.el.addEventListener('play', () => current() && set({ playing: true }));
   deck.el.addEventListener('playing', () => {
     if (!current()) return;
@@ -1638,6 +1921,16 @@ for (const deck of decks) {
   deck.el.addEventListener('timeupdate', () => {
     if (!current()) return;
     set({ position: deck.el.currentTime });
+    if (streaming && !embedStream) {
+      streamTicks++;
+      progressAt = performance.now();
+      if (!streamStarted && deck.el.currentTime > 0) {
+        streamStarted = true;
+        offlineSkips = 0;
+        keepSoon(streamToken);
+      }
+      if (state.loading && !deck.el.seeking) set({ loading: false });
+    }
     notePlace();
     countListening();
     const remaining = (deck.el.duration || 0) - deck.el.currentTime;
@@ -1668,13 +1961,11 @@ for (const deck of decks) {
     } else advance();
   });
   // A file deleted since the last scan: say so.
-  deck.el.addEventListener(
-    'error',
-    () =>
-      current() &&
-      deck.trackId &&
-      set({ error: true, playing: false, loading: false }),
-  );
+  deck.el.addEventListener('error', () => {
+    if (!current() || !deck.trackId) return;
+    if (streaming && !embedStream) void fallbackDirectStream();
+    else set({ error: true, playing: false, loading: false });
+  });
 }
 
 if ('mediaSession' in navigator) {

@@ -61,6 +61,8 @@ export const Channels = {
   youtubeSave: 'youtube:save',
   youtubeArtist: 'youtube:artist',
   youtubeMatch: 'youtube:match',
+  youtubeStreamResolve: 'youtube:streamResolve',
+  youtubeStreamRelease: 'youtube:streamRelease',
   youtubeRadio: 'youtube:radio',
   youtubeSearch: 'youtube:search',
   youtubeOAuthStatus: 'youtube:oauthStatus',
@@ -108,6 +110,10 @@ export const Channels = {
   partyDeclineInvite: 'party:declineInvite',
   partyProbe: 'party:probe',
   partyResync: 'party:resync',
+  discordStatus: 'discord:status',
+  discordPublish: 'discord:publish',
+  discordRetry: 'discord:retry',
+  discordSetPrivate: 'discord:setPrivate',
 } as const;
 
 /** Every event the main process may push to the renderer. */
@@ -125,6 +131,7 @@ export const Events = {
   leftFullScreen: 'app:leftFullScreen',
   partyChanged: 'party:changed',
   partyOpen: 'party:open',
+  discordStatus: 'discord:statusChanged',
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];

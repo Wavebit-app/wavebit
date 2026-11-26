@@ -92,6 +92,9 @@ const api: WavebitApi = {
       invoke(Channels.youtubeSave, { playlistId, saved }),
     artist: (browseId) => invoke(Channels.youtubeArtist, { browseId }),
     match: (song) => invoke(Channels.youtubeMatch, song),
+    resolveStream: (request) => invoke(Channels.youtubeStreamResolve, request),
+    releaseStream: (requestId, leaseId) =>
+      invoke(Channels.youtubeStreamRelease, { requestId, leaseId }),
     radio: (videoId) => invoke(Channels.youtubeRadio, { videoId }),
     search: (query) => invoke(Channels.youtubeSearch, { query }),
     oauth: {
@@ -141,6 +144,12 @@ const api: WavebitApi = {
     declineInvite: () => invoke(Channels.partyDeclineInvite),
     probe: () => invoke(Channels.partyProbe),
     resync: () => invoke(Channels.partyResync),
+  },
+  discord: {
+    status: () => invoke(Channels.discordStatus),
+    publish: (playback) => invoke(Channels.discordPublish, playback),
+    retry: () => invoke(Channels.discordRetry),
+    setPrivate: (on) => invoke(Channels.discordSetPrivate, on),
   },
   on(event, listener) {
     if (!EVENT_NAMES.includes(event as EventName))

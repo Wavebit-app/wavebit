@@ -60,6 +60,8 @@ import type {
   YtLibrary,
   YtPage,
   YtStatus,
+  YtResolvedStream,
+  YtStreamResolve,
 } from '../schemas/youtube';
 import type {
   NotesTarget,
@@ -73,6 +75,7 @@ import type {
   PartyProbe,
   PartyState,
 } from '../schemas/party';
+import type { DiscordPlayback, DiscordState } from '../schemas/discord';
 import type { Events } from './channels';
 
 export interface AppInfo {
@@ -106,6 +109,7 @@ export interface EventPayloads {
   [Events.partyChanged]: PartyState;
   /** An invite link was opened: show the Listen together drawer. */
   [Events.partyOpen]: null;
+  [Events.discordStatus]: DiscordState;
 }
 
 /** What the preload exposes as `window.wavebit`. */
@@ -229,6 +233,13 @@ export interface WavebitApi {
     artist(browseId: string): Promise<YtArtist>;
     /** The YouTube Music song that is the same recording, or null. */
     match(song: YtMatchQuery): Promise<YtMatch | null>;
+    /** Resolves a public audio/video pair; CDN addresses stay in the main process. */
+    resolveStream(request: YtStreamResolve): Promise<YtResolvedStream>;
+    /** Cancels an in-flight resolution and/or revokes its media lease. */
+    releaseStream(
+      requestId: string | null,
+      leaseId: string | null,
+    ): Promise<void>;
     /** AutoPlay's next songs after this one (YouTube Music's radio). */
     radio(videoId: string): Promise<YtRadioSong[]>;
     /** YouTube Music's search, as shelves. */
@@ -304,6 +315,14 @@ export interface WavebitApi {
     probe(): Promise<PartyProbe>;
     /** Measures the clock again and asks the server where the party is. */
     resync(): Promise<void>;
+  };
+  discord: {
+    status(): Promise<DiscordState>;
+    /** Sends the current song's display data; no credentials or paths. */
+    publish(playback: DiscordPlayback | null): Promise<void>;
+    retry(): Promise<void>;
+    /** Private listening: hides the card until turned off or wavebit quits. */
+    setPrivate(on: boolean): Promise<void>;
   };
   /** Subscribes to a main-process event. Returns the unsubscribe function. */
   on<E extends keyof EventPayloads>(

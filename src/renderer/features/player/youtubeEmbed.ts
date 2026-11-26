@@ -1,11 +1,11 @@
 import { isRequestedVideo } from './youtubeEmbedRules';
 
 /**
- * YouTube's official embedded player, driven through its documented
+ * YouTube's official embedded player fallback, driven through its documented
  * postMessage interface (the IFrame Player API's wire format), so no YouTube
  * script runs in wavebit's own page. One iframe for the whole app, created
  * once inside the stage (YouTubeStage.tsx) and never moved, since moving an
- * iframe reloads it.
+ * iframe reloads it. Public videos prefer the direct, muted video stage.
  */
 
 const ORIGIN = 'https://www.youtube-nocookie.com';

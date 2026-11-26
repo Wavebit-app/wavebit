@@ -11,6 +11,8 @@ import {
   YtOpenSchema,
   YtPageQuerySchema,
   YtSaveSchema,
+  YtStreamReleaseSchema,
+  YtStreamResolveSchema,
 } from '../../shared/schemas/youtube';
 import {
   artist,
@@ -35,6 +37,7 @@ import {
   signOutBrowser,
 } from '../youtube/oauth';
 import { handle } from './handle';
+import { releaseStream, resolveStream } from '../youtube/streams';
 
 const NoInput = z.undefined();
 
@@ -56,6 +59,17 @@ export function registerYouTubeIpc(): void {
     artist(browseId),
   );
   handle(Channels.youtubeMatch, YtMatchSchema, (song) => match(song));
+  handle(
+    Channels.youtubeStreamResolve,
+    YtStreamResolveSchema,
+    (request, event) => resolveStream(request, event.sender.id),
+  );
+  handle(
+    Channels.youtubeStreamRelease,
+    YtStreamReleaseSchema,
+    (request, event) =>
+      releaseStream(event.sender.id, request.requestId, request.leaseId),
+  );
   handle(Channels.youtubeRadio, YtRadioSchema, ({ videoId }) => radio(videoId));
   handle(Channels.youtubeSearch, YtSearchSchema, ({ query }) => search(query));
   handle(Channels.youtubeOAuthStatus, NoInput, () => oauthStatus());

@@ -11,6 +11,11 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { Events } from '../../shared/ipc/channels';
 import type { TrayCommand, TrayState } from '../../shared/schemas/tray';
+import {
+  discordState,
+  onDiscordState,
+  setDiscordPrivate,
+} from '../discord/presence';
 import { emit } from '../ipc/handle';
 import { onSettingsChange, readSettings } from '../services/settings';
 import {
@@ -57,6 +62,8 @@ function run(action: TrayAction): void {
   if (action === 'show') return showWindow();
   if (action === 'hide') return window?.()?.hide();
   if (action === 'quit') return app.quit();
+  if (action === 'discordPrivate')
+    return setDiscordPrivate(!discordState().private);
   if (SHOWS_WINDOW.has(action)) showWindow();
   emit(Events.trayCommand, action as TrayCommand);
 }
@@ -81,11 +88,23 @@ function refresh(): void {
         closeToTray: readSettings().closeToTray,
         mac,
         short: screen.getPrimaryDisplay().workAreaSize.height < SHORT_SCREEN_PX,
+        discordPrivate: readSettings().discordPresenceEnabled
+          ? discordState().private
+          : null,
       }).map(toTemplate),
     ),
   );
   tray.setToolTip(trayTooltip(state));
 }
+
+// Private listening can change from Settings or the menu; the checkbox follows.
+let discordPrivate: boolean | null = null;
+onDiscordState((next) => {
+  const shown = readSettings().discordPresenceEnabled ? next.private : null;
+  if (shown === discordPrivate) return;
+  discordPrivate = shown;
+  refresh();
+});
 
 export function updateTray(next: TrayState): void {
   state = next;

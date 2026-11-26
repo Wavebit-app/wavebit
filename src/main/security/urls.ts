@@ -36,13 +36,21 @@ export function onDomain(domains: readonly string[], url: string): boolean {
 }
 
 /** The artwork CDNs, the same ones the page's CSP allows for <img>. */
-const ART_DOMAINS = [
+/** The CDNs Spotify and YouTube serve covers from. */
+const COVER_DOMAINS = [
   'scdn.co',
   'spotifycdn.com',
   'googleusercontent.com',
   'ggpht.com',
   'ytimg.com',
 ];
+/** What the cover cache fetches: the covers, and Discord profile pictures. */
+const ART_DOMAINS = [...COVER_DOMAINS, 'cdn.discordapp.com'];
+
+/** A public cover Discord may be given: https on a cover CDN, short enough for its field. */
+export function isPublicCover(url: string): boolean {
+  return url.length <= 256 && onDomain(COVER_DOMAINS, url);
+}
 
 /**
  * The cover address in a media://remote/<base64url> path, or null. Only these

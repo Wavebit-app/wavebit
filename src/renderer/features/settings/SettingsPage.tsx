@@ -35,6 +35,7 @@ import { presetFor } from '../player/audioEffects';
 import { player, usePlayer } from '../player/player';
 import { EqualizerSheet } from './EqualizerSheet';
 import { YouTubeSection } from './YouTubeSection';
+import { DiscordSection } from './DiscordSection';
 import { LyricsSourcesSheet } from './LyricsSourcesSheet';
 import { AccentSwatches, ThemeCards } from './pickers';
 import { RuntimeTable } from './RuntimeTable';
@@ -585,6 +586,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
     appearance: 'Every change applies straight away.',
     spotify: 'Your Spotify connection and what wavebit reads from it.',
     youtube: 'Sign in to YouTube through your browser.',
+    discord: 'Show what you’re listening to on your Discord profile.',
     library: 'Where wavebit finds your music.',
     playback: 'How songs play.',
     party:
@@ -623,6 +625,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
       {section === 'appearance' && <Appearance />}
       {section === 'spotify' && <SpotifySection />}
       {section === 'youtube' && <YouTubeSection />}
+      {section === 'discord' && <DiscordSection />}
       {section === 'library' && <LibrarySection />}
       {section === 'playback' && <Playback />}
       {section === 'party' && <PartySection />}

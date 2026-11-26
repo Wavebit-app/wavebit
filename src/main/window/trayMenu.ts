@@ -1,7 +1,12 @@
 import type { TrayCommand, TrayState } from '../../shared/schemas/tray.ts';
 
 /** A command for the renderer, or something the main process does itself. */
-export type TrayAction = TrayCommand | 'show' | 'hide' | 'quit';
+export type TrayAction =
+  | TrayCommand
+  | 'show'
+  | 'hide'
+  | 'quit'
+  | 'discordPrivate';
 
 export interface TrayItem {
   label?: string;
@@ -45,6 +50,8 @@ export function trayItems(
     mac: boolean;
     /** The pages fold into one row: some Linux tray menus can't scroll. */
     short?: boolean;
+    /** Discord presence is on: offer Private listening, checked when it is. */
+    discordPrivate?: boolean | null;
   },
 ): TrayItem[] {
   const hasTrack = state.title !== null;
@@ -104,6 +111,16 @@ export function trayItems(
       ? [{ label: 'Open', submenu: [...panels, line, ...pages] }]
       : [...panels, line, ...pages]),
     line,
+    ...(typeof window.discordPrivate === 'boolean'
+      ? [
+          {
+            label: 'Private listening',
+            type: 'checkbox' as const,
+            checked: window.discordPrivate,
+            action: 'discordPrivate' as const,
+          },
+        ]
+      : []),
     window.visible
       ? { label: 'Hide wavebit', action: 'hide' }
       : { label: 'Show wavebit', action: 'show' },

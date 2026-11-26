@@ -4,6 +4,7 @@ type Section =
   | 'party'
   | 'spotify'
   | 'youtube'
+  | 'discord'
   | 'library'
   | 'playback'
   | 'content'
@@ -24,6 +25,7 @@ export const SECTION_TITLES: Record<Section, string> = {
   appearance: 'Appearance',
   spotify: 'Spotify',
   youtube: 'YouTube Music',
+  discord: 'Discord',
   library: 'Library',
   playback: 'Playback',
   party: 'Listen together',
@@ -462,6 +464,100 @@ export const SETTINGS: SettingEntry[] = [
       'What wavebit reads',
       'Your playlists, liked videos and subscriptions, read-only.',
       'permissions privacy data api',
+    ],
+  ]),
+  ...group('discord', 'Account', [
+    [
+      'discordPresenceEnabled',
+      'Show what I’m listening to',
+      'Through the Discord app on this computer. Off by default.',
+      'rich presence rpc activity privacy listening status share song vesktop',
+    ],
+    [
+      'discordPrivate',
+      'Private listening',
+      'Hides the card until you turn this off or quit wavebit. Also in the tray and the Playback menu.',
+      'incognito hide private session pause sharing',
+    ],
+  ]),
+  ...group('discord', 'Card', [
+    [
+      'discordActivityType',
+      'Activity type',
+      'The word before wavebit on your profile.',
+      'playing listening watching competing type',
+    ],
+    [
+      'discordStatusDisplay',
+      'Status line',
+      'The bold line beside your name in member lists.',
+      'member list bold artist song name display',
+    ],
+  ]),
+  ...group('discord', 'Details', [
+    [
+      'discordShowAlbum',
+      'Album name',
+      'Adds the album beside the artist.',
+      'metadata privacy',
+    ],
+    [
+      'discordShowArtwork',
+      'Album artwork',
+      'Only covers with a public web address. Your files’ covers never leave this computer.',
+      'cover image privacy artwork picture',
+    ],
+    [
+      'discordShowSource',
+      'Source badge',
+      'A small YouTube Music, Spotify or file mark on the cover.',
+      'small image icon service badge',
+    ],
+    [
+      'discordShowProgress',
+      'Progress bar',
+      'Elapsed and remaining time.',
+      'timestamp progress duration elapsed time bar',
+    ],
+    [
+      'discordShowSpeed',
+      'Playback speed',
+      'Adds the speed to the title when it isn’t 1×.',
+      'rate tempo speed tag',
+    ],
+    [
+      'discordShowQuality',
+      'Audio quality',
+      'For lossless files, read from the file itself. Shown when hovering the cover.',
+      'lossless hi-res flac alac bit depth sample rate',
+    ],
+  ]),
+  ...group('discord', 'Privacy', [
+    [
+      'discordShareFiles',
+      'Songs from my files',
+      'Off keeps your files private: nothing shows while one plays.',
+      'local library files private hide',
+    ],
+    [
+      'discordWhenPaused',
+      'When paused',
+      'Hide the card, or keep it with “Paused” and no timer.',
+      'pause paused idle hide',
+    ],
+  ]),
+  ...group('discord', 'Buttons', [
+    [
+      'discordSongButton',
+      'Song button',
+      'Opens the song. Not shown for a file with no link.',
+      'button link youtube spotify label variables',
+    ],
+    [
+      'discordAppButton',
+      'wavebit button',
+      'Opens wavebit’s page on GitHub.',
+      'button link github label variables',
     ],
   ]),
   ...group('about', 'wavebit', [

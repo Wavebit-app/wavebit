@@ -3,6 +3,7 @@
 
 mod home;
 mod loudness;
+mod quality;
 mod scan;
 
 use std::path::Path;
@@ -18,6 +19,7 @@ use sha2::{Digest, Sha256};
 use crate::db_err;
 use crate::matcher::{Candidate, Matcher};
 pub use loudness::LoudnessTask;
+pub use quality::AudioQualityTask;
 pub use scan::ScanTask;
 
 const SCHEMA: &str = "
@@ -529,7 +531,9 @@ impl Library {
     pub fn tracks_by_paths(&self, paths: Vec<String>) -> Result<Vec<LocalTrack>> {
         let conn = self.conn()?;
         let mut stmt = conn
-            .prepare_cached(&format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE path = ?1"))
+            .prepare_cached(&format!(
+                "SELECT {TRACK_COLUMNS} FROM tracks WHERE path = ?1"
+            ))
             .map_err(db_err)?;
         let mut tracks = Vec::with_capacity(paths.len());
         for path in &paths {
@@ -588,6 +592,14 @@ impl Library {
     #[napi]
     pub fn loudness(&self, id: String) -> AsyncTask<LoudnessTask> {
         AsyncTask::new(LoudnessTask::new(self.path.clone(), id))
+    }
+
+    /// The file's codec, sample rate, bit depth, bitrate and channels, read
+    /// from its header off the main thread. Null for an unknown id or a file
+    /// that can't be read. The path comes from the library, never the caller.
+    #[napi]
+    pub fn audio_quality(&self, id: String) -> AsyncTask<AudioQualityTask> {
+        AsyncTask::new(AudioQualityTask::new(self.path.clone(), id))
     }
 
     #[napi]

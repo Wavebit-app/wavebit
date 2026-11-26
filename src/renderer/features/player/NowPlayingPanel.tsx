@@ -1,4 +1,13 @@
-import { Eye, EyeOff, Heart, Maximize2, X } from 'lucide-react';
+import { Button, Dropdown, Label } from '@heroui/react';
+import {
+  Check,
+  Eye,
+  EyeOff,
+  Heart,
+  Maximize2,
+  Settings2,
+  X,
+} from 'lucide-react';
 import { activeLine, primaryArtist } from '../../../shared/lrc';
 import type { LyricLine } from '../../../shared/schemas/lyrics';
 import { nav, type Route } from '../../app/router';
@@ -22,12 +31,68 @@ import { songMenu } from '../menus/menus';
 import { SpotifyCanvas } from './Canvas';
 import { PartyButton, PartyStrip } from '../party/PartyBits';
 import { IconButton } from './controls';
-import { player, usePlayer, useStreaming, type Playable } from './player';
+import {
+  player,
+  useDirectVideo,
+  usePlayer,
+  useStreaming,
+  type Playable,
+} from './player';
 import { VideoSlot } from './VideoSlot';
 import { BACKDROP_MASK, useVideoStage, videoStage } from './videoStage';
 
 const spotifyTrackId = (track: Playable) =>
   /^spotify:track:([A-Za-z0-9]{22})$/.exec(track.spotifyUri ?? '')?.[1] ?? '';
+
+export function VideoQualityMenu() {
+  const direct = useDirectVideo();
+  if (!direct.active || direct.heights.length < 2) return null;
+  const options = ['auto', ...direct.heights.map(String)];
+  const selected =
+    direct.selectedHeight === null ? 'auto' : String(direct.selectedHeight);
+  return (
+    <Dropdown>
+      <Button
+        isIconOnly
+        variant="ghost"
+        aria-label={`Video quality: ${selected === 'auto' ? 'Auto' : `${selected}p`}`}
+        className="icon-sized text-white!"
+        style={{ width: 32, height: 32, minWidth: 32 }}
+      >
+        <Settings2 size={17} aria-hidden />
+      </Button>
+      <Dropdown.Popover placement="bottom end" className="min-w-40">
+        <Dropdown.Menu
+          aria-label="Video quality"
+          selectionMode="single"
+          selectedKeys={new Set([selected])}
+          onAction={(key) =>
+            player.setVideoQuality(key === 'auto' ? null : Number(key))
+          }
+        >
+          <Dropdown.Item id="auto" textValue="Auto">
+            <Label className="flex-1">Auto</Label>
+            {selected === 'auto' && (
+              <Check size={16} className="text-accent" aria-label="Selected" />
+            )}
+          </Dropdown.Item>
+          {options.slice(1).map((height) => (
+            <Dropdown.Item key={height} id={height} textValue={`${height}p`}>
+              <Label className="flex-1">{height}p</Label>
+              {selected === height && (
+                <Check
+                  size={16}
+                  className="text-accent"
+                  aria-label="Selected"
+                />
+              )}
+            </Dropdown.Item>
+          ))}
+        </Dropdown.Menu>
+      </Dropdown.Popover>
+    </Dropdown>
+  );
+}
 
 function ExpandButton({
   label,
@@ -66,21 +131,20 @@ function Hero({ track }: { track: Playable }) {
       onContextMenu={menuOn(() => songMenu(track))}
       className="relative h-[400px] shrink-0 overflow-hidden"
     >
-      {streaming && !hidden ? (
+      <div
+        aria-hidden
+        style={{ maskImage: BACKDROP_MASK }}
+        className="absolute inset-0 overflow-hidden"
+      >
+        <Artwork
+          src={track.artwork}
+          className="size-full"
+          rounded="rounded-none"
+        />
+        <SpotifyCanvas uri={track.spotifyUri} scrim={false} />
+      </div>
+      {streaming && !hidden && (
         <VideoSlot backdrop="hero" className="absolute inset-0" />
-      ) : (
-        <div
-          aria-hidden
-          style={{ maskImage: BACKDROP_MASK }}
-          className="absolute inset-0 overflow-hidden"
-        >
-          <Artwork
-            src={track.artwork}
-            className="size-full"
-            rounded="rounded-none"
-          />
-          <SpotifyCanvas uri={track.spotifyUri} scrim={false} />
-        </div>
       )}
       <div
         aria-hidden
@@ -115,6 +179,7 @@ function Hero({ track }: { track: Playable }) {
           </div>
           <p className="mt-0.5 truncate text-sm">{track.artist}</p>
         </div>
+        {streaming && <VideoQualityMenu />}
         {streaming && (
           <IconButton
             label={hidden ? 'Show video' : 'Hide video'}

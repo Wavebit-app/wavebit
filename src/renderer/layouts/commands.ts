@@ -2,6 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { nav } from '../app/router';
 import { currentUi, filterInputId, searchInputId, setUi } from '../app/ui';
 import { THEME_NAMES, ThemeSchema } from '../../shared/schemas/settings';
+import { setDiscordPrivate } from '../features/discord/useDiscord';
 import { player } from '../features/player/player';
 import { keys } from '../lib/queries';
 import type { Settings } from '../../shared/schemas/settings';
@@ -21,6 +22,8 @@ export interface CommandContext {
   showShortcuts: () => void;
   /** A downloaded update is waiting for a restart. */
   updateReady: boolean;
+  /** Private listening while Discord presence is on; null when it's off. */
+  discordPrivate: boolean | null;
 }
 
 const focus = (id: string) => {
@@ -177,6 +180,18 @@ export function menus(
             run: () => player.cycleRepeat(),
           },
         ],
+        ...(ctx.discordPrivate === null
+          ? []
+          : [
+              [
+                {
+                  id: 'discordPrivate',
+                  label: 'Private listening',
+                  checked: ctx.discordPrivate,
+                  run: () => setDiscordPrivate(!ctx.discordPrivate),
+                },
+              ],
+            ]),
         [
           {
             id: 'up',

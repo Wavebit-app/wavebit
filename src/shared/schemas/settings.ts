@@ -39,6 +39,17 @@ export const PlaybackSpeedSchema = z.union([
 ]);
 /** Spotify's three normalisation levels: -23, -14 and -11 LUFS. */
 export const LoudnessLevelSchema = z.enum(['quiet', 'normal', 'loud']);
+/** How Discord labels wavebit: "Listening to", "Playing"… */
+export const DiscordActivityTypeSchema = z.enum([
+  'playing',
+  'listening',
+  'watching',
+  'competing',
+]);
+/** The bold line beside the name in member lists: artist, song or wavebit. */
+export const DiscordStatusDisplaySchema = z.enum(['artist', 'title', 'app']);
+/** Button labels before {song_name} and the rest are filled in; cut to 32 after. */
+const DiscordLabelSchema = z.string().max(64);
 
 /** Songs downloading at once. */
 export const DownloadConcurrencySchema = z.union([
@@ -130,6 +141,29 @@ export const SettingsSchema = z
     downloadSyncLists: z.boolean(),
     /** Off hides Listen together everywhere, and the party server is never contacted. */
     partyEnabled: z.boolean(),
+    /** Publishes the current song through the local Discord desktop client. */
+    discordPresenceEnabled: z.boolean(),
+    discordActivityType: DiscordActivityTypeSchema,
+    discordShowAlbum: z.boolean(),
+    discordShowArtwork: z.boolean(),
+    discordShowProgress: z.boolean(),
+    discordStatusDisplay: DiscordStatusDisplaySchema,
+    /** A small YouTube Music, Spotify or file mark on the cover. */
+    discordShowSource: z.boolean(),
+    /** "[1.25×]" after the title when the speed isn't 1×. */
+    discordShowSpeed: z.boolean(),
+    /** The lossless file's format, read from the file. */
+    discordShowQuality: z.boolean(),
+    /** Off shows nothing while a song from the library's files plays. */
+    discordShareFiles: z.boolean(),
+    /** A pause takes the card down, or keeps it with "Paused" and no timer. */
+    discordWhenPaused: z.enum(['hide', 'show']),
+    discordSongButton: z.boolean(),
+    /** Where the song button leads: where the song plays, or Spotify when known. */
+    discordSongLink: z.enum(['plays', 'spotify']),
+    discordSongButtonText: DiscordLabelSchema,
+    discordAppButton: z.boolean(),
+    discordAppButtonText: DiscordLabelSchema,
     /** A song picked in a party plays for everyone at once, or joins the party's queue. */
     partyPick: z.enum(['everyone', 'queue']),
     /** Plays this device earlier (above zero) or later than the party, for speakers that lag. */
@@ -231,6 +265,22 @@ export const DEFAULT_SETTINGS: Settings = {
   downloadSkipOwned: true,
   downloadSyncLists: false,
   partyEnabled: true,
+  discordPresenceEnabled: false,
+  discordActivityType: 'listening',
+  discordShowAlbum: true,
+  discordShowArtwork: true,
+  discordShowProgress: true,
+  discordStatusDisplay: 'artist',
+  discordShowSource: true,
+  discordShowSpeed: true,
+  discordShowQuality: true,
+  discordShareFiles: true,
+  discordWhenPaused: 'hide',
+  discordSongButton: true,
+  discordSongLink: 'plays',
+  discordSongButtonText: '',
+  discordAppButton: true,
+  discordAppButtonText: '',
   partyPick: 'everyone',
   partyDelayMs: 0,
   partyBanner: true,

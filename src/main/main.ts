@@ -1,7 +1,9 @@
 import { app, BrowserWindow, Menu, session } from 'electron';
 import path from 'node:path';
+import { startDiscordPresence, stopDiscordPresence } from './discord/presence';
 import { startDownloads } from './downloads/downloads';
 import { registerAppIpc } from './ipc/app';
+import { registerDiscordIpc } from './ipc/discord';
 import { registerDownloadsIpc } from './ipc/downloads';
 import { registerLibraryIpc } from './ipc/library';
 import { registerLyricsIpc } from './ipc/lyrics';
@@ -61,6 +63,7 @@ let quitting = false;
 app.on('before-quit', () => {
   quitting = true;
   leavePartyOnQuit();
+  stopDiscordPresence();
 });
 
 function openWindow(): void {
@@ -103,6 +106,7 @@ void app.whenReady().then(() => {
   responseCache().purgeExpired();
   registerAppIpc();
   registerSettingsIpc();
+  registerDiscordIpc();
   registerLibraryIpc();
   registerLyricsIpc();
   registerSpotifyIpc();
@@ -116,6 +120,7 @@ void app.whenReady().then(() => {
   startOffline();
   startUpdates((value) => (quitting = value));
   startParty();
+  startDiscordPresence();
   // `wavebit://party/CODE` opens wavebit. A dev build isn't an installed app, so it doesn't claim the link.
   if (app.isPackaged) app.setAsDefaultProtocolClient('wavebit');
   const link = inviteIn(process.argv);

@@ -16,6 +16,7 @@ import { LyricsPanel } from '../features/lyrics/LyricsPanel';
 import { NowPlayingPanel } from '../features/player/NowPlayingPanel';
 import { QueuePanel } from '../features/player/QueuePanel';
 import { PartyPanel } from '../features/party/PartyPanel';
+import { useDiscord } from '../features/discord/useDiscord';
 import { usePartyBridge } from '../features/party/usePartyBridge';
 import { useTrayBridge } from '../features/player/useTrayBridge';
 import { useUpdateSettings, useUpdateStatus } from '../lib/queries';
@@ -63,6 +64,10 @@ export function AppShell({
   const scroller = useRef<HTMLElement>(null);
 
   const updateReady = useUpdateStatus().data?.state === 'downloaded';
+  const discord = useDiscord();
+  const discordPrivate = settings.discordPresenceEnabled
+    ? (discord?.private ?? false)
+    : null;
   const ctx = useMemo<CommandContext>(
     () => ({
       client,
@@ -70,8 +75,9 @@ export function AppShell({
       update: (patch) => update.mutate(patch),
       showShortcuts: () => setShortcuts(true),
       updateReady,
+      discordPrivate,
     }),
-    [client, settings, update, updateReady],
+    [client, settings, update, updateReady, discordPrivate],
   );
   const menuList = useMemo(() => menus(ctx), [ctx]);
 
