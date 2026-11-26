@@ -75,7 +75,7 @@ import type {
   PartyProbe,
   PartyState,
 } from '../schemas/party';
-import type { DiscordPlayback, DiscordStatus } from '../schemas/discord';
+import type { DiscordPlayback, DiscordState } from '../schemas/discord';
 import type { Events } from './channels';
 
 export interface AppInfo {
@@ -109,7 +109,7 @@ export interface EventPayloads {
   [Events.partyChanged]: PartyState;
   /** An invite link was opened: show the Listen together drawer. */
   [Events.partyOpen]: null;
-  [Events.discordStatus]: DiscordStatus;
+  [Events.discordStatus]: DiscordState;
 }
 
 /** What the preload exposes as `window.wavebit`. */
@@ -317,10 +317,12 @@ export interface WavebitApi {
     resync(): Promise<void>;
   };
   discord: {
-    status(): Promise<DiscordStatus>;
+    status(): Promise<DiscordState>;
     /** Sends the current song's display data; no credentials or paths. */
     publish(playback: DiscordPlayback | null): Promise<void>;
     retry(): Promise<void>;
+    /** Private listening: hides the card until turned off or wavebit quits. */
+    setPrivate(on: boolean): Promise<void>;
   };
   /** Subscribes to a main-process event. Returns the unsubscribe function. */
   on<E extends keyof EventPayloads>(

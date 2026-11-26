@@ -1465,6 +1465,7 @@ version = "0.1.0"
 dependencies = [
  "ebur128",
  "interprocess",
+ "libc",
  "lofty",
  "napi",
  "napi-build",

@@ -149,6 +149,7 @@ const api: WavebitApi = {
     status: () => invoke(Channels.discordStatus),
     publish: (playback) => invoke(Channels.discordPublish, playback),
     retry: () => invoke(Channels.discordRetry),
+    setPrivate: (on) => invoke(Channels.discordSetPrivate, on),
   },
   on(event, listener) {
     if (!EVENT_NAMES.includes(event as EventName))

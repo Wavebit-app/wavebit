@@ -96,3 +96,21 @@ test('a desktop tray is only ruled out by a clear no', () => {
   assert.equal(trayHostAnswer('(false,)\n'), false);
   assert.equal(trayHostAnswer(''), true);
 });
+
+test('Private listening shows only while Discord presence is on', () => {
+  assert.equal(find(trayItems(song, window), 'Private listening'), undefined);
+  assert.equal(
+    find(
+      trayItems(song, { ...window, discordPrivate: null }),
+      'Private listening',
+    ),
+    undefined,
+  );
+  const item = find(
+    trayItems(song, { ...window, discordPrivate: true }),
+    'Private listening',
+  );
+  assert.equal(item?.type, 'checkbox');
+  assert.equal(item?.checked, true);
+  assert.equal(item?.action, 'discordPrivate');
+});

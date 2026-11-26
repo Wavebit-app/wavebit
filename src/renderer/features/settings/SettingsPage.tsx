@@ -586,8 +586,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
     appearance: 'Every change applies straight away.',
     spotify: 'Your Spotify connection and what wavebit reads from it.',
     youtube: 'Sign in to YouTube through your browser.',
-    discord:
-      'Share what you’re listening to through Discord or a compatible client.',
+    discord: 'Show what you’re listening to on your Discord profile.',
     library: 'Where wavebit finds your music.',
     playback: 'How songs play.',
     party:

@@ -113,6 +113,7 @@ export const Channels = {
   discordStatus: 'discord:status',
   discordPublish: 'discord:publish',
   discordRetry: 'discord:retry',
+  discordSetPrivate: 'discord:setPrivate',
 } as const;
 
 /** Every event the main process may push to the renderer. */

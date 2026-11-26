@@ -17,13 +17,18 @@ export declare class Cache {
 }
 
 /**
- * One Discord local RPC connection. It receives only settings and playback
- * display data from the main process, never a credential or arbitrary path.
+ * One Discord local RPC connection. It receives only checked display data
+ * from the main process, never a credential or a path, and reports only
+ * checked status: who is signed in, which client, and whether a card shows.
  */
 export declare class DiscordPresence {
   constructor(clientId: string, onStatus: ((arg: string) => unknown))
   enable(enabled: boolean): void
-  setActivity(jsonText: string): void
+  /**
+   * Sets the card. Returns false, and changes nothing, if the activity
+   * fails any check.
+   */
+  setActivity(jsonText: string): boolean
   clear(): void
   retry(): void
   shutdown(waitMs: number): void
@@ -67,6 +72,12 @@ export declare class Library {
    * main thread; the result is stored so a file is never measured twice.
    */
   loudness(id: string): Promise<unknown>
+  /**
+   * The file's codec, sample rate, bit depth, bitrate and channels, read
+   * from its header off the main thread. Null for an unknown id or a file
+   * that can't be read. The path comes from the library, never the caller.
+   */
+  audioQuality(id: string): Promise<unknown>
   recordPlay(id: string): void
   /**
    * For each Spotify song, the local file that is the same recording (and
@@ -131,6 +142,18 @@ export interface ArtistSummary {
 export interface Artwork {
   mime: string
   data: Buffer
+}
+
+/** What a file's header says about its audio.  */
+export interface AudioQuality {
+  /** Short codec name: FLAC, ALAC, WAV, AIFF, APE, WavPack, MP3, AAC, Opus, Vorbis… */
+  codec: string
+  /** True for FLAC, ALAC, WAV, AIFF, APE and WavPack. */
+  lossless: boolean
+  sampleRateHz?: number
+  bitDepth?: number
+  bitrateKbps?: number
+  channels?: number
 }
 
 /**

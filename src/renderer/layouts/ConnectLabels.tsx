@@ -3,7 +3,13 @@ import { FolderPlus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { errorCode } from '../../shared/errors';
 import { nav } from '../app/router';
-import { SpotifyMark, YouTubeMusicMark } from '../design/BrandMarks';
+import {
+  DiscordMark,
+  SpotifyMark,
+  YouTubeMusicMark,
+} from '../design/BrandMarks';
+import { useDiscord } from '../features/discord/useDiscord';
+import { cachedArt } from '../lib/format';
 import { IconAction } from '../design/IconAction';
 import { SPOTIFY_ERRORS } from '../features/spotify/ConnectSpotify';
 import { count } from '../lib/format';
@@ -11,6 +17,7 @@ import {
   useAddFolder,
   useGoogleAccount,
   useLibraryState,
+  useSettings,
   usePlaylists,
   useSpotifyActions,
   useSpotifyAlbums,
@@ -65,6 +72,7 @@ function Account({
   name,
   line,
   isPending = false,
+  live = false,
   onPress,
   children,
 }: {
@@ -75,6 +83,8 @@ function Account({
   /** Under the name: the service, or that it isn't connected. */
   line: string;
   isPending?: boolean;
+  /** A green dot on the circle: Discord is showing a card. */
+  live?: boolean;
   onPress: () => void;
   /** The card's last line. */
   children: ReactNode;
@@ -95,7 +105,15 @@ function Account({
             busy ? (
               <Spinner size="sm" color="current" />
             ) : (
-              <Picture image={image} mark={mark} size={AVATAR} />
+              <>
+                <Picture image={image} mark={mark} size={AVATAR} />
+                {live && (
+                  <span
+                    aria-hidden
+                    className="absolute -right-0.5 -bottom-0.5 size-[11px] rounded-full bg-success ring-2 ring-canvas"
+                  />
+                )}
+              </>
             )
           }
         </Button>
@@ -136,6 +154,9 @@ function SpotifyFacts() {
 }
 
 const spotifyMark = (size: number) => <SpotifyMark size={size} />;
+const discordMark = (size: number) => (
+  <DiscordMark size={Math.round(size * 0.6)} />
+);
 const youtubeMark = (size: number) => <YouTubeMusicMark size={size} />;
 
 /**
@@ -151,6 +172,11 @@ export function ConnectLabels() {
   const openSettings = (section: 'spotify' | 'youtube') =>
     nav.go({ name: 'settings', section });
   const folders = useLibraryState().data?.folders.length;
+  const discord = useDiscord();
+  const discordOn =
+    !!useSettings().data?.discordPresenceEnabled &&
+    discord?.status === 'connected';
+  const discordUser = discord?.user ?? null;
   const add = useAddFolder();
 
   const connectSpotify = () =>
@@ -236,6 +262,27 @@ export function ConnectLabels() {
               Press to set it up in Settings.
             </Account>
           ))}
+        {discordOn && discord && (
+          <Account
+            label={`Discord: ${discord.showing ? 'showing what you play' : 'connected'}`}
+            image={
+              discordUser?.avatarUrl ? cachedArt(discordUser.avatarUrl) : null
+            }
+            mark={discordMark}
+            name={discordUser?.name ?? 'Discord'}
+            line={
+              discordUser ? `Discord · @${discordUser.username}` : 'Discord'
+            }
+            live={discord.showing}
+            onPress={() => nav.go({ name: 'settings', section: 'discord' })}
+          >
+            {discord.private
+              ? 'Private listening: nothing is shared.'
+              : discord.showing && discord.song
+                ? `Showing ${discord.song.title}${discord.song.artist ? ` by ${discord.song.artist}` : ''}`
+                : 'Nothing is showing right now.'}
+          </Account>
+        )}
       </div>
       {folders === 0 && (
         <IconAction
