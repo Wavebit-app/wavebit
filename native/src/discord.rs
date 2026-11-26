@@ -491,6 +491,8 @@ enum Msg {
     /// A frame from connection `n`; frames from an older connection are ignored.
     Frame(u64, Value),
     Closed(u64),
+    /// The client sent CLOSE. Before READY that means it refused the application id.
+    Refused(u64),
 }
 
 struct Connection {
@@ -520,7 +522,7 @@ fn read_loop(id: u64, mut reader: Stream, writer: Arc<Mutex<Stream>>, send: Send
                 }
             },
             2 => {
-                let _ = send.send(Msg::Closed(id));
+                let _ = send.send(Msg::Refused(id));
                 return;
             }
             // PING: answered with PONG and the same body.
@@ -612,6 +614,8 @@ struct Report {
     user: Option<DiscordUser>,
     client: Option<&'static str>,
     rejected: bool,
+    /// The client closed the handshake: Discord doesn't know this application id.
+    refused_id: bool,
     showing: bool,
     sent_at: Option<i64>,
 }
@@ -627,7 +631,13 @@ impl Report {
                 "avatarUrl": u.avatar_url,
             })),
             "client": self.client,
-            "problem": if self.rejected { Some("rejected") } else { None },
+            "problem": if self.refused_id {
+                Some("app_id")
+            } else if self.rejected {
+                Some("rejected")
+            } else {
+                None
+            },
             "showing": self.showing,
             "sentAt": self.sent_at,
         })
@@ -693,6 +703,7 @@ impl Worker {
                 }
                 self.enabled = enabled;
                 if !enabled {
+                    self.state.refused_id = false;
                     self.drop_connection(true);
                     self.set_status(PresenceStatus::Disabled);
                 } else if self.connection.is_none() {
@@ -799,6 +810,7 @@ impl Worker {
                         self.state.user = ready_user(&frame);
                         self.state.client = connection.client;
                         self.state.rejected = false;
+                        self.state.refused_id = false;
                         self.state.showing = false;
                         self.connection = Some(connection);
                         self.delivered = None;
@@ -809,6 +821,10 @@ impl Worker {
                     }
                 }
                 Ok(Msg::Closed(id)) if id == connection.id => return true,
+                Ok(Msg::Refused(id)) if id == connection.id => {
+                    self.state.refused_id = true;
+                    return true;
+                }
                 Ok(_) => {}
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return false,
@@ -864,7 +880,7 @@ impl Worker {
                         self.frame(frame);
                     }
                 }
-                Ok(Msg::Closed(id)) => {
+                Ok(Msg::Closed(id) | Msg::Refused(id)) => {
                     if self.connection.as_ref().is_some_and(|c| c.id == id) {
                         self.drop_connection(false);
                         self.set_status(PresenceStatus::Waiting);
@@ -917,6 +933,7 @@ impl DiscordPresence {
                         user: None,
                         client: None,
                         rejected: false,
+                        refused_id: false,
                         showing: false,
                         sent_at: None,
                     },
@@ -1164,11 +1181,18 @@ mod tests {
             user: None,
             client: Some("Vesktop · Flatpak"),
             rejected: true,
+            refused_id: false,
             showing: false,
             sent_at: None,
         };
         let value: Value = serde_json::from_str(&report.json()).unwrap();
         assert_eq!(value["problem"], "rejected");
+        let refused = Report {
+            refused_id: true,
+            ..report.clone()
+        };
+        let value: Value = serde_json::from_str(&refused.json()).unwrap();
+        assert_eq!(value["problem"], "app_id");
         assert_eq!(value["client"], "Vesktop · Flatpak");
         assert_eq!(value.as_object().unwrap().len(), 6);
     }

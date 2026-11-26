@@ -11,6 +11,8 @@ const EXTERNAL_HOSTS = new Set([
   'music.youtube.com',
   'www.youtube.com',
   'youtu.be',
+  // Settings › Discord links to the developer portal, where the app id is made.
+  'discord.com',
 ]);
 
 /**

@@ -74,10 +74,24 @@ quitting send an empty activity, which takes the card down.
   another program running as the same user. Windows offers no simple owner
   check for that.
 
+## The Discord application
+
+Discord only accepts a card for an application it knows: Vesktop and Discord
+close the handshake for an unknown application ID, and wavebit then says
+"Discord didn't accept the application ID". The ID is a public identifier,
+not a secret. wavebit uses, in order:
+
+1. the ID pasted in Settings › Discord › Application;
+2. `WAVEBIT_DISCORD_CLIENT_ID` in the environment when wavebit starts;
+3. the ID built into this copy (`WAVEBIT_DISCORD_CLIENT_ID` at build time).
+
+To make one: discord.com/developers/applications › New Application, name it
+"wavebit", and copy the Application ID from General Information.
+
 ## Before a release
 
-Discord application IDs are public identifiers, but each release must use a
-wavebit-owned one. Set `WAVEBIT_DISCORD_CLIENT_ID` when starting or building:
+Each release should carry a wavebit-owned ID, so people don't have to paste
+one. Set `WAVEBIT_DISCORD_CLIENT_ID` when building:
 
 ```sh
 WAVEBIT_DISCORD_CLIENT_ID=123456789012345678 npm start
