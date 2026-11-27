@@ -4,10 +4,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { errorCode } from '../../../shared/errors';
 import type { Settings, SettingsPatch } from '../../../shared/schemas/settings';
 import { nav } from '../../app/router';
-import { Banner } from '../../design/Banner';
 import { SpotifyMark, YouTubeMusicMark } from '../../design/BrandMarks';
 import { IconAction } from '../../design/IconAction';
 import { IconTile } from '../../design/IconTile';
+import { Logo } from '../../design/Logo';
 import { Segmented } from '../../design/Segmented';
 import { SideOrBottomSheet } from '../../design/Sheet';
 import { SwitchRow } from '../../design/SwitchRow';
@@ -20,7 +20,6 @@ import {
   useYtOAuthActions,
 } from '../../lib/queries';
 import { BREAKPOINTS, useWindowWidth } from '../../lib/useBreakpoint';
-import { useResolvedTheme } from '../../lib/useTheme';
 import { TitleBar } from '../../layouts/TitleBar';
 import { FolderList } from '../library/FolderList';
 import { AccentSwatches, ThemeCards } from '../settings/pickers';
@@ -30,57 +29,15 @@ import {
 } from '../settings/YouTubeSection';
 import type { ErrorCode } from '../../../shared/schemas/spotify';
 import { SPOTIFY_ERRORS, WhatWavebitSees } from '../spotify/ConnectSpotify';
-import { AccountsArt, FoldersArt, ThemesArt, WelcomeArt } from './BannerArt';
-
-/** Each screen's banner, in the README's words (README.md › Features). */
-const BANNERS = [
-  {
-    title: 'All your music.',
-    highlight: 'One player.',
-    line: 'Your files, Spotify and YouTube Music. Free and open source.',
-  },
-  {
-    title: 'Your own files.',
-    highlight: 'Always in sync.',
-    line: 'Scanned from your music folders and watched for changes.',
-  },
-  {
-    title: 'Side by side.',
-    highlight: 'All in one place.',
-    line: 'Your files, your Spotify library and YouTube Music, side by side.',
-  },
-  {
-    title: 'Your colours.',
-    highlight: 'Your player.',
-    line: 'Artwork themes that take their colours from the cover, plus Light, Dark, Black and Midnight.',
-  },
-];
+import { SetupArt } from './SetupArt';
 
 /**
- * Welcome and setup share one split: the banner fills the whole left side,
- * top to bottom, and the column sits on the right. Narrow windows put a
- * strip of the banner above the column.
+ * Welcome and setup share one split: the dithered wavebit mark fills the
+ * whole left side, top to bottom, and the column sits on the right. Narrow
+ * windows put a strip of it above the column.
  */
-function Split({
-  step,
-  art,
-  children,
-}: {
-  step: number;
-  art: ReactNode;
-  children: ReactNode;
-}) {
+function Split({ children }: { children: ReactNode }) {
   const wide = useWindowWidth() >= BREAKPOINTS.split;
-  const banner = (
-    <Banner
-      id={String(step)}
-      {...BANNERS[step]!}
-      art={art}
-      compact={!wide}
-      flush={step === 0}
-      centered={step === 0}
-    />
-  );
   return (
     <div className="flex h-full flex-col bg-canvas text-foreground">
       <TitleBar minimal />
@@ -88,9 +45,13 @@ function Split({
         className={`flex min-h-0 flex-1 overflow-hidden rounded-tl-md bg-surface ${wide ? 'flex-row' : 'flex-col overflow-y-auto'}`}
       >
         {wide ? (
-          <div className="flex min-w-0 flex-[48_1_0]">{banner}</div>
+          <div className="flex min-w-0 flex-[48_1_0]">
+            <SetupArt />
+          </div>
         ) : (
-          <div className="px-4 pt-4">{banner}</div>
+          <div className="px-4 pt-4">
+            <SetupArt compact />
+          </div>
         )}
         <div
           className={`flex min-w-0 justify-center ${wide ? 'flex-[52_1_0] overflow-y-auto px-10 py-12' : 'flex-1 px-6 pt-6 pb-[calc(34px+env(safe-area-inset-bottom,0px)+env(keyboard-inset-height,0px))]'}`}
@@ -107,8 +68,9 @@ function Split({
 function Welcome({ go, skip }: { go: () => void; skip: () => void }) {
   const wide = useWindowWidth() >= BREAKPOINTS.split;
   return (
-    <Split step={0} art={<WelcomeArt />}>
-      <h1 className="text-hero font-semibold tracking-[-0.02em]">
+    <Split>
+      <Logo size={56} />
+      <h1 className="mt-6 text-hero font-semibold tracking-[-0.02em]">
         Welcome to wavebit
       </h1>
       <p className="mt-4 text-lg leading-relaxed text-muted">
@@ -402,8 +364,6 @@ export function Onboarding({ settings }: { settings: Settings }) {
   const setStep = (setupStep: number) => set({ setupStep });
   const library = useLibraryState().data;
   const spotify = useSpotifyStatus().data;
-  const youtube = useYtOAuth().data;
-  const theme = useResolvedTheme(settings);
   const finish = () => {
     nav.go(
       spotify?.state === 'signed_in'
@@ -415,23 +375,8 @@ export function Onboarding({ settings }: { settings: Settings }) {
 
   if (step === 0) return <Welcome go={() => setStep(1)} skip={finish} />;
 
-  const art =
-    step === 1 ? (
-      <FoldersArt
-        folders={library?.folders ?? []}
-        songs={library?.trackCount ?? 0}
-      />
-    ) : step === 2 ? (
-      <AccountsArt
-        spotify={spotify?.state === 'signed_in'}
-        youtube={!!youtube?.signedIn}
-      />
-    ) : (
-      <ThemesArt theme={settings.theme === 'system' ? theme : settings.theme} />
-    );
-
   return (
-    <Split step={step} art={art}>
+    <Split>
       {step === 1 && (
         <>
           <Progress step={1} />
