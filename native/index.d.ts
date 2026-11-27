@@ -255,6 +255,8 @@ export interface PartyInvite {
   peer?: string
   key?: string
   relay?: string
+  /** The addresses the host's computer can be reached at directly. */
+  addrs?: Array<string>
 }
 
 /** Reads a code or an invite link; null for anything else. */

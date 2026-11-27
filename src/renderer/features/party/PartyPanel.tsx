@@ -663,6 +663,16 @@ function InParty({ code }: { code: string }) {
             ends it for everyone.
           </p>
         )}
+        {p2p?.hosting && p2p.reach !== 'anyone' && (
+          <p
+            role="status"
+            className="shrink-0 rounded-md bg-warning-soft px-4 py-3 text-[0.8667rem]"
+          >
+            {p2p.reach === 'network'
+              ? 'Only people on your network can join for now: your router didn’t open a port. Turning on UPnP in your router, or adding a relay in Settings › Listen together, lets friends anywhere join.'
+              : 'Nobody can reach this computer yet. Check that it’s connected to a network.'}
+          </p>
+        )}
         {p2p && (
           <Safety
             number={p2p.safety}

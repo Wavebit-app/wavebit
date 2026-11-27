@@ -30,6 +30,22 @@ to it.
   network. The invite link names the host's identity directly, so there is
   nothing to look up and no code to guess.
 
+## Without a relay
+
+A relay is optional. With none set (and _Allow direct connections_ on), the
+host's helper asks the router to forward a port to it (UPnP or NAT-PMP,
+removed when the party ends) and the invite lists the addresses the
+computer can be reached at (`at=`): the port the router opened, a public
+IPv6 address, and the home network's own. A friend's helper dials those
+straight, checking the host's identity as always.
+
+- Friends on the same network can always join.
+- Friends elsewhere can join when the router opened the port. When it
+  didn't, the host's drawer says that only people on the same network can
+  join, and how to change that (UPnP on the router, or a relay).
+- With direct connections off and no relay, there is no way in, and hosting
+  says so.
+
 ## Getting a direct connection
 
 Three things make the direct path happen with only one relay in the picture:
@@ -79,6 +95,13 @@ wavebit://party/K7M2QX?peer=12D3KooW…&key=<22 url-safe characters>[&relay=<mul
   compared in constant time.
 - `relay` is only there when the host uses a relay other than wavebit's. The
   invite then says so in amber.
+- `at` lists up to six addresses of the host's computer, comma separated.
+  A link is anything anyone can send, so the app refuses the whole link if
+  one of them is loopback, link-local, unspecified, multicast or broadcast,
+  an IPv4 address written as IPv6, or a port under 1024
+  (`native/src/party/invite.rs`), and the helper checks them again. Home
+  network addresses are allowed: they are how two computers on the same
+  Wi-Fi meet. Nothing is dialled before Join is pressed.
 - In an https invite link the key belongs after the `#`, which a browser
   never sends to the page's host.
 - The **safety number** is 8 characters from the host's identity. The host
@@ -128,4 +151,5 @@ wavebit://party/K7M2QX?peer=12D3KooW…&key=<22 url-safe characters>[&relay=<mul
   network permission.
 - Running the relay is an ongoing cost. Its address goes in
   `WAVEBIT_RELAY` (`src/shared/schemas/party.ts`) once it is deployed; until
-  then, hosting needs a relay address in Settings.
+  then, parties are reached without one (see Without a relay) or through a
+  relay address in Settings.

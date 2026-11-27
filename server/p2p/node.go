@@ -2,8 +2,11 @@ package p2p
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +26,7 @@ import (
 	quic "github.com/libp2p/go-libp2p/p2p/transport/quic"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	ma "github.com/multiformats/go-multiaddr"
+	manet "github.com/multiformats/go-multiaddr/net"
 )
 
 // libp2p believes an outside address for this computer once 4 different
@@ -39,7 +43,7 @@ const ProtocolID = protocol.ID("/wavebit/party/http/1.0.0")
 
 // Node is this computer on the libp2p network: a fresh identity every time,
 // no DHT, no bootstrap peers, no local discovery. It only ever talks to the
-// relay it was given and the peer an invite names.
+// relay it was given (when there is one) and the peer an invite names.
 type Node struct {
 	Host   host.Host
 	Relay  peer.AddrInfo
@@ -48,12 +52,21 @@ type Node struct {
 
 // NodeOptions are what the app chose.
 type NodeOptions struct {
-	// Relay is a multiaddr ending in /p2p/<id>.
+	// Relay is a multiaddr ending in /p2p/<id>, or empty for none: then
+	// joiners reach the host only at the addresses its invite lists (the same
+	// network, or a port its router opened), and Direct must be on.
 	Relay string
 	// Direct allows connections that don't go through the relay, and with
 	// them hole punching. Off, nobody in the party learns this computer's
 	// address from it.
 	Direct bool
+	// MapPort asks the router to forward a port (UPnP or NAT-PMP). Only a
+	// host needs one; a guest only ever dials out.
+	MapPort bool
+	// OnlyPeer, for a guest, is the host: every connection with any other
+	// peer (but the relay) is refused, so a guest's helper talks to nobody
+	// else whatever reaches it.
+	OnlyPeer peer.ID
 }
 
 // ParseRelay reads a relay address. It must name the relay's peer id, so
@@ -75,6 +88,12 @@ func ParseRelay(s string) (peer.AddrInfo, error) {
 type gater struct {
 	relay  peer.ID
 	direct bool
+	only   peer.ID
+}
+
+// known reports whether p may talk to this node at all.
+func (g gater) known(p peer.ID) bool {
+	return g.only == "" || p == g.only || (g.relay != "" && p == g.relay)
 }
 
 func relayed(addr ma.Multiaddr) bool {
@@ -82,15 +101,15 @@ func relayed(addr ma.Multiaddr) bool {
 	return err == nil
 }
 
-func (g gater) InterceptPeerDial(peer.ID) bool { return true }
+func (g gater) InterceptPeerDial(p peer.ID) bool { return g.known(p) }
 func (g gater) InterceptAddrDial(p peer.ID, addr ma.Multiaddr) bool {
-	return g.direct || p == g.relay || relayed(addr)
+	return g.known(p) && (g.direct || p == g.relay || relayed(addr))
 }
 func (g gater) InterceptAccept(addrs network.ConnMultiaddrs) bool {
 	return g.direct || relayed(addrs.RemoteMultiaddr())
 }
 func (g gater) InterceptSecured(_ network.Direction, p peer.ID, addrs network.ConnMultiaddrs) bool {
-	return g.direct || p == g.relay || relayed(addrs.RemoteMultiaddr())
+	return g.known(p) && (g.direct || p == g.relay || relayed(addrs.RemoteMultiaddr()))
 }
 func (g gater) InterceptUpgraded(network.Conn) (bool, control.DisconnectReason) {
 	return true, 0
@@ -120,11 +139,20 @@ func limits() rcmgr.ConcreteLimitConfig {
 	return partial.Build(scaled)
 }
 
+// ErrNoPath is NewNode's answer to no relay and no direct connections:
+// nobody could ever reach this computer, or be reached from it.
+var ErrNoPath = errors.New("no relay and no direct connections")
+
 // NewNode starts this computer's libp2p host.
 func NewNode(opts NodeOptions) (*Node, error) {
-	relayInfo, err := ParseRelay(opts.Relay)
-	if err != nil {
-		return nil, err
+	var relayInfo peer.AddrInfo
+	if strings.TrimSpace(opts.Relay) != "" {
+		var err error
+		if relayInfo, err = ParseRelay(opts.Relay); err != nil {
+			return nil, err
+		}
+	} else if !opts.Direct {
+		return nil, ErrNoPath
 	}
 	priv, _, err := crypto.GenerateEd25519Key(nil)
 	if err != nil {
@@ -148,7 +176,7 @@ func NewNode(opts NodeOptions) (*Node, error) {
 		libp2p.Security(libp2ptls.ID, libp2ptls.New),
 		libp2p.ResourceManager(rm),
 		libp2p.ConnectionManager(cm),
-		libp2p.ConnectionGater(gater{relay: relayInfo.ID, direct: opts.Direct}),
+		libp2p.ConnectionGater(gater{relay: relayInfo.ID, direct: opts.Direct, only: opts.OnlyPeer}),
 		libp2p.EnableRelay(),
 		libp2p.DisableMetrics(),
 		libp2p.UserAgent("wavebit"),
@@ -164,6 +192,12 @@ func NewNode(opts NodeOptions) (*Node, error) {
 			libp2p.EnableHolePunching(),
 			libp2p.EnableAutoNATv2(),
 		)
+		if opts.MapPort {
+			// Asks the router (UPnP or NAT-PMP) to forward a port to this
+			// helper, so friends elsewhere can reach a party with no relay.
+			// The mapping is removed when the helper closes.
+			options = append(options, libp2p.NATPortMap())
+		}
 	} else {
 		options = append(options, libp2p.NoListenAddrs)
 	}
@@ -177,8 +211,14 @@ func NewNode(opts NodeOptions) (*Node, error) {
 // Close stops the host.
 func (n *Node) Close() error { return n.Host.Close() }
 
+// HasRelay reports whether this node was given a relay.
+func (n *Node) HasRelay() bool { return n.Relay.ID != "" }
+
 // ConnectRelay connects to the relay.
 func (n *Node) ConnectRelay(ctx context.Context) error {
+	if !n.HasRelay() {
+		return ErrNoPath
+	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	return n.Host.Connect(ctx, n.Relay)
@@ -253,7 +293,24 @@ func waitFor(ctx context.Context, within time.Duration, ok func() bool) bool {
 // from the relay, so it waits for that first; when no direct connection
 // appears it connects again, which gives the host a second try. All of it
 // happens before the app's party traffic starts.
-func (n *Node) ConnectHost(ctx context.Context, hostID peer.ID) error {
+//
+// addrs are the addresses the invite listed for the host's computer. They
+// are tried first, straight there, and are the only way in without a relay.
+func (n *Node) ConnectHost(ctx context.Context, hostID peer.ID, addrs []ma.Multiaddr) error {
+	if n.Direct && len(addrs) > 0 {
+		dial, cancel := context.WithTimeout(network.WithForceDirectDial(ctx, "wavebit party"), 8*time.Second)
+		err := n.Host.Connect(dial, peer.AddrInfo{ID: hostID, Addrs: addrs})
+		cancel()
+		if err == nil && n.directTo(hostID) {
+			return nil
+		}
+		if !n.HasRelay() {
+			if err == nil {
+				err = ErrNoPath
+			}
+			return err
+		}
+	}
 	if err := n.ConnectRelay(ctx); err != nil {
 		return err
 	}
@@ -360,4 +417,123 @@ func (n *Node) MoveOffRelay(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// shareable reports whether addr is one a friend could dial: IPv4 or IPv6,
+// TCP or QUIC, nothing relayed, and not loopback, link-local or unspecified.
+// The app's link checks the same again.
+func shareable(addr ma.Multiaddr) bool {
+	if relayed(addr) || manet.IsIPLoopback(addr) || manet.IsIP6LinkLocal(addr) || manet.IsIPUnspecified(addr) {
+		return false
+	}
+	ip, err := manet.ToIP(addr)
+	if err != nil || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.Equal(net.IPv4bcast) {
+		return false
+	}
+	if v4 := ip.To4(); v4 != nil && v4[0] == 0 {
+		return false
+	}
+	if ip.To4() == nil && slices.Equal(ip.To16()[:12], make([]byte, 12)) {
+		return false
+	}
+	port := 0
+	parts := strings.Split(addr.String(), "/")
+	if len(parts) == 5 && parts[3] == "tcp" {
+		port, _ = strconv.Atoi(parts[4])
+	} else if len(parts) == 6 && parts[3] == "udp" && parts[5] == "quic-v1" {
+		port, _ = strconv.Atoi(parts[4])
+	}
+	return port >= 1024 && port <= 65535
+}
+
+// allAddrs is every address this host knows for itself, including the
+// router's mapping, before AutoNAT has confirmed any of them.
+func (n *Node) allAddrs() []ma.Multiaddr {
+	if all, ok := n.Host.(interface{ AllAddrs() []ma.Multiaddr }); ok {
+		return all.AllAddrs()
+	}
+	return n.Host.Addrs()
+}
+
+// ShareAddrs are the addresses an invite lists for this computer: public
+// ones first (a port the router opened, or a public IPv6 address), then
+// the home network's, at most max in all.
+func (n *Node) ShareAddrs(max int) (addrs []string, public bool) {
+	if !n.Direct {
+		return nil, false
+	}
+	var pub, home, other []string
+	seen := map[string]bool{}
+	preferred := outboundIPs()
+	for _, a := range n.allAddrs() {
+		s := a.String()
+		if seen[s] || !shareable(a) {
+			continue
+		}
+		seen[s] = true
+		ip, _ := manet.ToIP(a)
+		switch {
+		case manet.IsPublicAddr(a):
+			pub = append(pub, s)
+		case slices.ContainsFunc(preferred, ip.Equal):
+			home = append(home, s)
+		default:
+			// Another interface: a second network card, or a bridge for
+			// containers or VMs that nobody else can reach. Last.
+			other = append(other, s)
+		}
+	}
+	slices.Sort(pub)
+	slices.Sort(home)
+	slices.Sort(other)
+	addrs = append(append(pub, home...), other...)
+	if len(addrs) > max {
+		addrs = addrs[:max]
+	}
+	return addrs, len(pub) > 0
+}
+
+// WaitForPublic gives the router up to within to open a port, returning
+// early once this computer has a public address.
+func (n *Node) WaitForPublic(ctx context.Context, within time.Duration) {
+	waitFor(ctx, within, func() bool {
+		_, public := n.ShareAddrs(6)
+		return public
+	})
+}
+
+// ParseHostAddrs reads the addresses an invite listed for the host, with the
+// same rules as ShareAddrs. Anything else is an error: the app checked them
+// already, so one that fails here means something is wrong.
+func ParseHostAddrs(raw []string) ([]ma.Multiaddr, error) {
+	if len(raw) > 6 {
+		return nil, errors.New("too many host addresses")
+	}
+	out := make([]ma.Multiaddr, 0, len(raw))
+	for _, s := range raw {
+		a, err := ma.NewMultiaddr(s)
+		if err != nil || !shareable(a) || a.String() != s {
+			return nil, fmt.Errorf("host address %q", s)
+		}
+		out = append(out, a)
+	}
+	return out, nil
+}
+
+// outboundIPs are the addresses this computer uses for the internet: the
+// source the system picks for its default route, for IPv4 and IPv6. A UDP
+// "dial" only asks the routing table; nothing is sent.
+func outboundIPs() []net.IP {
+	var out []net.IP
+	for _, target := range []string{"192.0.2.1:9", "[2001:db8::1]:9"} {
+		c, err := net.Dial("udp", target)
+		if err != nil {
+			continue
+		}
+		if a, ok := c.LocalAddr().(*net.UDPAddr); ok && !a.IP.IsUnspecified() {
+			out = append(out, a.IP)
+		}
+		_ = c.Close()
+	}
+	return out
 }

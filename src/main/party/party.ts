@@ -31,7 +31,7 @@ import {
 } from '../services/settings';
 import { shut, stillShut } from './doorRules';
 import { type Helper, helperPath, startHelper } from './p2p';
-import { newSecret, p2pLink, safetyNumber } from './p2pRules';
+import { hostReach, newSecret, p2pLink, safetyNumber } from './p2pRules';
 
 /**
  * Listen together, the main process's part: who this device joins as, which
@@ -94,7 +94,12 @@ let invite: {
   /** When it arrived; a press just after a new invite replaced one is ignored. */
   since: number;
   /** A party on someone's computer: who, the key, and a relay the link named. */
-  peer: { peer: string; key: string; relay: string | null } | null;
+  peer: {
+    peer: string;
+    key: string;
+    relay: string | null;
+    addrs: string[];
+  } | null;
 } | null = null;
 
 /**
@@ -158,9 +163,10 @@ async function throughHelper(
   options: {
     mode: 'host' | 'join';
     partyKey: string;
-    relay: string;
+    relay: string | null;
     direct: boolean;
     hostPeer?: string;
+    addrs?: readonly string[];
   },
   then: (origin: string) => void,
 ): Promise<void> {
@@ -285,6 +291,9 @@ export function partyState(): PartyState {
             safety: safetyNumber(helper.hostPeer),
             direct: helper.links.direct,
             relayed: helper.links.relayed,
+            reach: hosting
+              ? hostReach(helper.relay, helper.addrs, helper.isPublic)
+              : null,
           }
         : null,
     inviteLink:
@@ -295,6 +304,7 @@ export function partyState(): PartyState {
             helper.partyKey,
             helper.relay,
             WAVEBIT_RELAY,
+            helper.addrs,
           )
         : null,
   };
@@ -385,8 +395,10 @@ export function createParty(autoplay: boolean): void {
   if (!me()) return refuse('no_name');
   // Host on this device: the party runs on this computer.
   if (readSettings().partyHostHere && helperPath()) {
+    // With no relay the party is reached at this computer's own addresses,
+    // which needs direct connections.
     const relay = relayAddress();
-    if (!relay) return refuse('no_relay');
+    if (!relay && !readSettings().partyDirect) return refuse('no_relay');
     void throughHelper(
       {
         mode: 'host',
@@ -412,9 +424,15 @@ const peerOf = (parsed: {
   peer?: string | null;
   key?: string | null;
   relay?: string | null;
+  addrs?: string[] | null;
 }) =>
   parsed.peer && parsed.key
-    ? { peer: parsed.peer, key: parsed.key, relay: parsed.relay ?? null }
+    ? {
+        peer: parsed.peer,
+        key: parsed.key,
+        relay: parsed.relay ?? null,
+        addrs: parsed.addrs ?? [],
+      }
     : null;
 
 /** A typed code or a pasted link. */
@@ -453,7 +471,9 @@ function joinComputer(
   if (!helperPath()) return refuse('helper_missing');
   if (!me()) return refuse('no_name');
   const relay = peer.relay ?? relayAddress();
-  if (!relay) return refuse('no_relay');
+  const direct = readSettings().partyDirect;
+  // No relay: the host's own addresses are the only way in.
+  if (!relay && !(direct && peer.addrs.length)) return refuse('no_relay');
   invite = null;
   void throughHelper(
     {
@@ -461,7 +481,8 @@ function joinComputer(
       partyKey: peer.key,
       hostPeer: peer.peer,
       relay,
-      direct: readSettings().partyDirect,
+      addrs: peer.addrs,
+      direct,
     },
     (origin) => {
       const who = identity(origin);

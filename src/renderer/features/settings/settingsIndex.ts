@@ -290,13 +290,13 @@ export const SETTINGS: SettingEntry[] = [
     [
       'partyDirect',
       'Allow direct connections',
-      'Faster, but people in a party you host or join on a computer can see your address on the internet. Off sends everything through the relay.',
+      'Faster, and how a party on this computer is reached without a relay. People in a party you host or join on a computer can see your address on the internet, and a party you host asks your router to open a port while it runs. Off sends everything through a relay.',
       'listen together p2p privacy ip address relay hole punching',
     ],
     [
       'partyRelay',
       'Relay address',
-      'Leave empty to use wavebit’s relay.',
+      'Optional. Without one, friends reach a party on this computer directly: on your network, or anywhere when your router opens a port.',
       'listen together p2p relay libp2p multiaddr',
     ],
   ]),

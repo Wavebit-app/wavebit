@@ -9,6 +9,15 @@ import { z } from 'zod';
 
 const PEER = /^12D3KooW[1-9A-HJ-NP-Za-km-z]{38,52}$/;
 
+/**
+ * An address the host's helper says it can be reached at. The Rust module
+ * checks every address a link carries again (`clean_host_addr`); this only
+ * keeps the helper's own output to that shape.
+ */
+const HOST_ADDR =
+  /^\/(ip4\/(\d{1,3}\.){3}\d{1,3}|ip6\/[0-9a-f:]{2,39})\/(tcp\/\d{4,5}|udp\/\d{4,5}\/quic-v1)$/;
+const HostAddrs = z.array(z.string().max(80).regex(HOST_ADDR)).max(6);
+
 /** One line from the helper. It is read as untrusted, like a server's frame. */
 export const HelperEventSchema = z.discriminatedUnion('event', [
   z
@@ -16,6 +25,15 @@ export const HelperEventSchema = z.discriminatedUnion('event', [
       event: z.literal('ready'),
       port: z.number().int().min(1024).max(65_535),
       peerId: z.string().regex(PEER),
+      addrs: HostAddrs.default([]),
+      public: z.boolean().default(false),
+    })
+    .strict(),
+  z
+    .object({
+      event: z.literal('addrs'),
+      addrs: HostAddrs,
+      public: z.boolean(),
     })
     .strict(),
   z
@@ -68,16 +86,38 @@ export function safetyNumber(peerId: string): string {
 
 /**
  * The link a host shares. It names this computer and carries the key its
- * helper wants; a relay only when it isn't the one wavebit uses anyway.
+ * helper wants; a relay only when it isn't the one wavebit uses anyway; and
+ * the addresses this computer can be reached at directly, when it has any.
  */
 export function p2pLink(
   code: string,
   peerId: string,
   key: string,
-  relay: string,
+  relay: string | null,
   defaultRelay: string | null,
+  addrs: readonly string[] = [],
 ): string {
   const via =
-    relay !== defaultRelay ? `&relay=${encodeURIComponent(relay)}` : '';
-  return `wavebit://party/${code}?peer=${peerId}&key=${key}${via}`;
+    relay && relay !== defaultRelay
+      ? `&relay=${encodeURIComponent(relay)}`
+      : '';
+  const at = addrs.length
+    ? `&at=${addrs.map(encodeURIComponent).join(',')}`
+    : '';
+  return `wavebit://party/${code}?peer=${peerId}&key=${key}${via}${at}`;
+}
+
+/**
+ * Who can reach a party hosted on this computer: anyone (a relay, or a port
+ * the router opened), people on the same network only, or nobody yet.
+ */
+export type HostReach = 'anyone' | 'network' | 'none';
+
+export function hostReach(
+  relay: string | null,
+  addrs: readonly string[],
+  isPublic: boolean,
+): HostReach {
+  if (relay || isPublic) return 'anyone';
+  return addrs.length ? 'network' : 'none';
 }

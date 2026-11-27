@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	relay "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/relay"
 
@@ -110,7 +112,7 @@ func TestAPartyOverTheRelay(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { guest.Close() })
-	if err := guest.ConnectHost(ctx, host.Host.ID()); err != nil {
+	if err := guest.ConnectHost(ctx, host.Host.ID(), nil); err != nil {
 		t.Fatalf("connect to host: %v", err)
 	}
 	guestBridge := serveBridge(t, Proxy(guest, host.Host.ID(), partyKey))
@@ -171,7 +173,7 @@ func TestAWrongKeyIsRefusedAndCounted(t *testing.T) {
 	}
 	guest, _ := NewNode(NodeOptions{Relay: relayAddr})
 	t.Cleanup(func() { guest.Close() })
-	if err := guest.ConnectHost(ctx, host.Host.ID()); err != nil {
+	if err := guest.ConnectHost(ctx, host.Host.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
 	bridge := serveBridge(t, Proxy(guest, host.Host.ID(), "the-wrong-key-0123456789ab"))
@@ -269,7 +271,7 @@ func TestTheLinkMovesOffTheRelayWhenADirectOneOpens(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { guest.Close() })
-	if err := guest.ConnectHost(ctx, host.Host.ID()); err != nil {
+	if err := guest.ConnectHost(ctx, host.Host.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
 	guestBridge := serveBridge(t, Proxy(guest, host.Host.ID(), partyKey))
@@ -339,5 +341,106 @@ func TestTheGuardForgetsIdlePeers(t *testing.T) {
 	}
 	if len(g.recent) > maxTracked+1 || len(g.open) != 0 {
 		t.Fatalf("the guard kept %d peers and %d open counts", len(g.recent), len(g.open))
+	}
+}
+
+// With no relay, a friend reaches the host's computer at the addresses its
+// invite lists: here, this machine's own network address.
+func TestAPartyWithNoRelay(t *testing.T) {
+	config.MaxParties = 1
+	config.MaxPartiesPerClient = 0
+	t.Cleanup(func() { config.MaxParties = 50; config.MaxPartiesPerClient = 3 })
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	if _, err := NewNode(NodeOptions{Direct: false}); err != ErrNoPath {
+		t.Fatalf("no relay and no direct connections should be refused, got %v", err)
+	}
+	host, err := NewNode(NodeOptions{Direct: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { host.Close() })
+	shared, _ := host.ShareAddrs(6)
+	if len(shared) == 0 {
+		t.Skip("this machine has no network address besides loopback")
+	}
+	for _, a := range shared {
+		if strings.Contains(a, "/127.") || strings.Contains(a, "/::1/") || strings.Contains(a, "p2p") {
+			t.Fatalf("shared an address a link may not carry: %s", a)
+		}
+	}
+	party := listen.New()
+	stop := ServeParty(host, partyKey, party.Handler())
+	t.Cleanup(stop)
+	hostBridge := serveBridge(t, party.Handler())
+
+	guest, err := NewNode(NodeOptions{Direct: true, OnlyPeer: host.Host.ID()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { guest.Close() })
+	addrs, err := ParseHostAddrs(shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := guest.ConnectHost(ctx, host.Host.ID(), addrs); err != nil {
+		t.Fatalf("connect straight to the host: %v", err)
+	}
+	guestBridge := serveBridge(t, Proxy(guest, host.Host.ID(), partyKey))
+	auth := map[string]string{BridgeHeader: bridgeKey}
+	status, made := call(t, "POST", hostBridge+"/api/parties",
+		map[string]string{"userId": "u1", "deviceId": "d1", "displayName": "Asha"}, auth)
+	if status != http.StatusCreated {
+		t.Fatalf("create on the host: %d %v", status, made)
+	}
+	status, joined := call(t, "POST", guestBridge+"/api/parties/"+made["code"].(string)+"/join",
+		map[string]string{"userId": "u2", "deviceId": "d2", "displayName": "Maya"}, auth)
+	if status != http.StatusOK {
+		t.Fatalf("join with no relay: %d %v", status, joined)
+	}
+	if direct, relayed := guest.Links(); direct != 1 || relayed != 0 {
+		t.Fatalf("want one direct link, got %d direct %d relayed", direct, relayed)
+	}
+
+	// A guest's helper talks to the host only: a stranger who learns its
+	// address is refused.
+	stranger, err := NewNode(NodeOptions{Direct: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stranger.Close() })
+	dial, stop2 := context.WithTimeout(ctx, 5*time.Second)
+	defer stop2()
+	// The stranger's side may finish its handshake before the guest's refusal
+	// reaches it, so look from the guest's side.
+	_ = stranger.Host.Connect(dial, peer.AddrInfo{ID: guest.Host.ID(), Addrs: guest.Host.Addrs()})
+	time.Sleep(300 * time.Millisecond)
+	if guest.Host.Network().Connectedness(stranger.Host.ID()) == network.Connected {
+		t.Fatal("a guest's helper accepted a stranger")
+	}
+	if _, err := stranger.Host.NewStream(dial, guest.Host.ID(), ProtocolID); err == nil {
+		t.Fatal("a stranger opened a stream to a guest's helper")
+	}
+}
+
+func TestHostAddressesFromALinkAreChecked(t *testing.T) {
+	for _, bad := range []string{
+		"/ip4/127.0.0.1/tcp/40211",
+		"/ip4/0.0.0.0/tcp/40211",
+		"/ip4/169.254.3.4/tcp/40211",
+		"/ip4/192.168.1.2/tcp/22",
+		"/ip4/192.168.1.2/udp/40211",
+		"/ip6/::1/tcp/40211",
+		"/ip6/fe80::1/tcp/40211",
+		"/dns4/example.com/tcp/40211",
+		"/ip4/192.168.1.2/tcp/40211/p2p/12D3KooWGzBf9Cg7Lr5dNrYJcDP6CQsk2r7mRAbjaGsLc2ZLA7zz",
+	} {
+		if _, err := ParseHostAddrs([]string{bad}); err == nil {
+			t.Errorf("accepted %s", bad)
+		}
+	}
+	if _, err := ParseHostAddrs([]string{"/ip4/192.168.1.2/tcp/40211", "/ip6/2001:db8::5/udp/40211/quic-v1"}); err != nil {
+		t.Fatal(err)
 	}
 }
