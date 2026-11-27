@@ -109,11 +109,14 @@ jobs:
       # Host on this device needs the helper (server/cmd/wavebit-p2p) in the app.
       - name: The helper is in the app and runs
         run: |
-          helper=tools/wavebit-p2p$([ "$RUNNER_OS" = Windows ] && echo .exe)
+          helper=tools/wavebit-p2p
+          if [ "$RUNNER_OS" = Windows ]; then helper=$helper.exe; fi
           out=$(echo '{}' | "$helper" || true)
           echo "$out"
           [ "$out" = '{"code":"bad_settings","event":"error"}' ]
-          find out/builder -path '*tools/wavebit-p2p*' -type f | grep -q .
+          found=$(find out/builder -path '*tools/wavebit-p2p*' -type f)
+          echo "$found"
+          [ -n "$found" ]
       - name: Collect installers and checksums
         run: node scripts/release-assets.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
