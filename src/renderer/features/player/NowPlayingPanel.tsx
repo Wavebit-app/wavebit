@@ -29,6 +29,7 @@ import {
 } from '../../lib/queries';
 import { songMenu } from '../menus/menus';
 import { SpotifyCanvas } from './Canvas';
+import { YouTubeCanvas, useYouTubeCanvas } from './YouTubeCanvas';
 import { PartyButton, PartyStrip } from '../party/PartyBits';
 import { IconButton } from './controls';
 import {
@@ -125,6 +126,8 @@ function Hero({ track }: { track: Playable }) {
   const uri = id ? `spotify:track:${id}` : '';
   const saved = useSaved(uri ? [uri] : [], signedIn).data?.get(uri);
   const save = useSaveTrack();
+  // A YouTube song's music video takes the place of YouTube's still picture.
+  const youtube = useYouTubeCanvas(track);
   return (
     <section
       aria-label="Now playing"
@@ -142,8 +145,9 @@ function Hero({ track }: { track: Playable }) {
           rounded="rounded-none"
         />
         <SpotifyCanvas uri={track.spotifyUri} scrim={false} />
+        {youtube && <YouTubeCanvas source={youtube} scrim={false} />}
       </div>
-      {streaming && !hidden && (
+      {streaming && !hidden && !youtube && (
         <VideoSlot backdrop="hero" className="absolute inset-0" />
       )}
       <div

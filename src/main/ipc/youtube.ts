@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Channels } from '../../shared/ipc/channels';
 import {
   YtArtistQuerySchema,
+  YtCanvasSchema,
   YtCategoryQuerySchema,
   YtOAuthClientSchema,
   YtRadioSchema,
@@ -16,6 +17,7 @@ import {
 } from '../../shared/schemas/youtube';
 import {
   artist,
+  canvas,
   category,
   explore,
   match,
@@ -73,6 +75,7 @@ export function registerYouTubeIpc(): void {
   );
   handle(Channels.youtubeRadio, YtRadioSchema, ({ videoId }) => radio(videoId));
   handle(Channels.youtubeVideo, YtRadioSchema, ({ videoId }) => video(videoId));
+  handle(Channels.youtubeCanvas, YtCanvasSchema, (song) => canvas(song));
   handle(Channels.youtubeSearch, YtSearchSchema, ({ query }) => search(query));
   handle(Channels.youtubeOAuthStatus, NoInput, () => oauthStatus());
   handle(

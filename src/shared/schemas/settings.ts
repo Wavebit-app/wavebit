@@ -131,6 +131,8 @@ export const SettingsSchema = z
     /** Streamed songs are copied privately as they play, to carry on without a connection. */
     keepOffline: z.boolean(),
     spotifyCanvas: z.boolean(),
+    /** A YouTube song's music video, muted, where Spotify's Canvas shows. */
+    youtubeCanvas: z.boolean(),
     setupStep: SetupStepSchema,
     /** Only the main process adds folders, from the system folder picker. */
     libraryFolders: z.array(z.string().min(1).max(4096)).max(20),
@@ -270,6 +272,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dontRepeatSongs: false,
   keepOffline: true,
   spotifyCanvas: false,
+  youtubeCanvas: true,
   setupStep: 0,
   libraryFolders: [],
   downloadFolder: null,

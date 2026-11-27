@@ -156,6 +156,17 @@ function Appearance() {
           onChange={(spotifyCanvas) => set({ spotifyCanvas })}
         />
         <SettingSwitch
+          id="youtubeCanvas"
+          description={
+            motionLimited
+              ? 'Off while Motion is Reduced or Off, or your system asks for less motion.'
+              : undefined
+          }
+          isSelected={s.youtubeCanvas && !motionLimited}
+          isDisabled={motionLimited}
+          onChange={(youtubeCanvas) => set({ youtubeCanvas })}
+        />
+        <SettingSwitch
           id="hideVolumeBar"
           isSelected={s.hideVolumeBar}
           onChange={(hideVolumeBar) => set({ hideVolumeBar })}
