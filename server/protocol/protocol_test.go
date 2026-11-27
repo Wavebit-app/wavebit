@@ -19,10 +19,13 @@ func validRequest() JoinRequest {
 
 func TestValidateAcceptsValidRequest(t *testing.T) {
 	req := validRequest()
-	avatar := "https://example.com/a.png"
+	avatar := "https://lh3.googleusercontent.com/a/abc"
 	req.AvatarUrl = &avatar
 	if err := req.Validate(); err != nil {
 		t.Fatalf("Validate() = %v, want nil", err)
+	}
+	if req.AvatarUrl == nil {
+		t.Fatalf("a Google picture should be kept")
 	}
 }
 
@@ -66,10 +69,10 @@ func TestValidateRejectsOversizeFields(t *testing.T) {
 	}
 
 	req = validRequest()
-	avatar := "https://example.com/" + strings.Repeat("a", 1000)
+	avatar := "https://lh3.googleusercontent.com/" + strings.Repeat("a", 1000)
 	req.AvatarUrl = &avatar
-	if err := req.Validate(); err == nil {
-		t.Errorf("oversize avatarUrl accepted")
+	if err := req.Validate(); err != nil || req.AvatarUrl != nil {
+		t.Errorf("an oversize avatarUrl should be dropped, got %v, %v", err, req.AvatarUrl)
 	}
 }
 
@@ -85,10 +88,12 @@ func TestValidateAvatarUrl(t *testing.T) {
 	}
 
 	req = validRequest()
-	bad := "ftp://example.com/a.png"
-	req.AvatarUrl = &bad
-	if err := req.Validate(); err == nil {
-		t.Errorf("non-http avatarUrl accepted")
+	for _, bad := range []string{"ftp://example.com/a.png", "http://lh3.googleusercontent.com/a", "https://tracker.example/a.png"} {
+		req = validRequest()
+		req.AvatarUrl = &bad
+		if err := req.Validate(); err != nil || req.AvatarUrl != nil {
+			t.Errorf("%s should be dropped without refusing the join, got %v, %v", bad, err, req.AvatarUrl)
+		}
 	}
 }
 
@@ -118,5 +123,39 @@ func TestValidateTrimsWhitespace(t *testing.T) {
 	}
 	if req.UserId != "u_alice" || req.DisplayName != "Alice" {
 		t.Errorf("fields not trimmed: %+v", req)
+	}
+}
+
+func TestValidateCleansTheName(t *testing.T) {
+	req := validRequest()
+	req.DisplayName = "Ma\u202Eya"
+	if err := req.Validate(); err != nil || req.DisplayName != "Maya" {
+		t.Fatalf("got %q, %v", req.DisplayName, err)
+	}
+	req = validRequest()
+	req.DisplayName = "\u200B\u200B"
+	if err := req.Validate(); err == nil {
+		t.Fatalf("a name of only invisible characters was accepted")
+	}
+}
+
+func TestReactionsAreTheEight(t *testing.T) {
+	want := []string{"heart", "fire", "laugh", "wow", "sad", "clap", "party", "dance"}
+	if len(Reactions) != len(want) {
+		t.Fatalf("got %d reactions", len(Reactions))
+	}
+	for _, id := range want {
+		if !Reactions[id] {
+			t.Errorf("%s missing", id)
+		}
+	}
+}
+
+func TestFeaturesAreCapped(t *testing.T) {
+	req := validRequest()
+	req.Features = []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "reactions"}
+	_ = req.Validate()
+	if len(req.Features) != 8 || req.Wants("reactions") {
+		t.Fatalf("features not capped: %v", req.Features)
 	}
 }

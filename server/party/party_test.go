@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/KabirSinghBhatia/BitChord/backend/codes"
-	"github.com/KabirSinghBhatia/BitChord/backend/config"
+	"github.com/Wavebit-app/wavebit/server/codes"
+	"github.com/Wavebit-app/wavebit/server/config"
 )
 
 func TestCodeNormalisation(t *testing.T) {
@@ -482,5 +482,88 @@ func TestQueueIndexPrefersTheCopyAtTheNeedle(t *testing.T) {
 	ps.SetTrack(nil, b, 0, true, &wrong, nil)
 	if ps.QueueIndex != 3 {
 		t.Fatalf("expected b at 3 despite a stale index, got %d", ps.QueueIndex)
+	}
+}
+
+func TestRemovedHostKeepsNoRightsAndTheEldestTakesOver(t *testing.T) {
+	p := NewPartyWithMaxMembers("ABC123", 5)
+	host, _ := p.Join("u1", "d1", "Host", nil)
+	second, _ := p.Join("u2", "d2", "Second", nil)
+	third, _ := p.Join("u3", "d3", "Third", nil)
+	second.JoinedAtMs, third.JoinedAtMs = 100, 200
+	p.MarkConnected(second, true)
+	p.MarkConnected(third, true)
+
+	p.Remove(host.MemberId)
+	if host.IsHost {
+		t.Fatal("a removed host kept the host flag")
+	}
+	if !second.IsHost || third.IsHost {
+		t.Fatalf("expected the longest-standing member to be host: %v %v", second.IsHost, third.IsHost)
+	}
+	if p.IsMember(host) {
+		t.Fatal("removed member still counts as a member")
+	}
+}
+
+func TestQueueHistoryIsCapped(t *testing.T) {
+	p := NewPlaybackState()
+	var queue []*Track
+	for i := 0; i < config.MaxQueueTotal+50; i++ {
+		queue = append(queue, &Track{VideoId: fmt.Sprintf("v%d", i)})
+	}
+	// Everything before the index is history.
+	p.SetQueue(nil, queue, config.MaxQueueTotal+40)
+	if len(p.Queue) > config.MaxQueueTotal {
+		t.Fatalf("queue grew to %d", len(p.Queue))
+	}
+	if p.Queue[p.QueueIndex].VideoId != fmt.Sprintf("v%d", config.MaxQueueTotal+40) {
+		t.Fatalf("the index no longer points at the playing song: %s", p.Queue[p.QueueIndex].VideoId)
+	}
+}
+
+func TestRemovedDevicesCantRejoin(t *testing.T) {
+	p := NewPartyWithMaxMembers("ABC123", 5)
+	_, _ = p.Join("u1", "d1", "Host", nil)
+	guest, _ := p.Join("u2", "d2", "Guest", nil)
+	p.Ban(guest)
+	p.Remove(guest.MemberId)
+	if _, err := p.Join("u2", "d2", "Guest", nil); err == nil {
+		t.Fatal("a removed device walked back in")
+	}
+	if _, err := p.Join("u2", "d-new", "Guest", nil); err == nil {
+		t.Fatal("a removed account walked back in on a new device id")
+	}
+}
+
+func TestPartiesNobodyUsesAreSwept(t *testing.T) {
+	p := NewPartyWithMaxMembers("ABC123", 5)
+	m, _ := p.Join("u1", "d1", "Host", nil)
+	now := p.CreatedAtMs
+	if p.IsExpired(now + 1000) {
+		t.Fatal("expired straight away")
+	}
+	if !p.IsExpired(now + config.UnclaimedPartyTTLMs + 1) {
+		t.Fatal("a party nobody connected to lived on")
+	}
+	p.MarkConnected(m, true)
+	if p.IsExpired(now + config.UnclaimedPartyTTLMs + 1) {
+		t.Fatal("a connected party expired")
+	}
+	p.Remove(m.MemberId)
+	if !p.IsExpired(now + 6000) {
+		t.Fatal("an empty party lived on for the next stranger to host")
+	}
+}
+
+func TestTracksFromMembersAreCleaned(t *testing.T) {
+	if TrackFromWire(map[string]interface{}{"videoId": "../../x"}) != nil {
+		t.Fatal("a non-id was accepted")
+	}
+	tr := TrackFromWire(map[string]interface{}{
+		"videoId": "dQw4w9WgXcQ", "title": "Song‮", "thumbnailUrl": "javascript:alert(1)", "durationMs": -5.0,
+	})
+	if tr == nil || tr.Title != "Song" || tr.ThumbnailUrl != nil || tr.DurationMs != nil {
+		t.Fatalf("got %+v", tr)
 	}
 }

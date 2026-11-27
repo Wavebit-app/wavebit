@@ -2,15 +2,17 @@ package party
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"sort"
 	"sync"
 
-	"github.com/KabirSinghBhatia/BitChord/backend/clock"
-	"github.com/KabirSinghBhatia/BitChord/backend/codes"
-	"github.com/KabirSinghBhatia/BitChord/backend/config"
+	"github.com/Wavebit-app/wavebit/server/clean"
+	"github.com/Wavebit-app/wavebit/server/clock"
+	"github.com/Wavebit-app/wavebit/server/codes"
+	"github.com/Wavebit-app/wavebit/server/config"
 )
 
 // PartyError represents an error with an HTTP status code and wire error code.
@@ -38,38 +40,23 @@ type Track struct {
 	FromAutoplay bool    `json:"fromAutoplay"`
 }
 
+// TrackFromWire reads a track a member sent. It is shown on everybody's
+// screen and its id decides what everybody plays, so an id that can't be a
+// song refuses the track, and names and pictures are cleaned.
 func TrackFromWire(raw map[string]interface{}) *Track {
 	if raw == nil {
 		return nil
 	}
 	vid, _ := raw["videoId"].(string)
-	if vid == "" {
+	if !clean.VideoID(vid) {
 		return nil
 	}
-	if len(vid) > 128 {
-		vid = vid[:128]
-	}
-
 	title, _ := raw["title"].(string)
-	if len(title) > 300 {
-		title = title[:300]
-	}
-
 	artist, _ := raw["artist"].(string)
-	if len(artist) > 300 {
-		artist = artist[:300]
-	}
-
-	var thumbPtr *string
-	if t, ok := raw["thumbnailUrl"].(string); ok && t != "" {
-		if len(t) > 1000 {
-			t = t[:1000]
-		}
-		thumbPtr = &t
-	}
+	thumb, _ := raw["thumbnailUrl"].(string)
 
 	var durPtr *int64
-	if d, ok := raw["durationMs"].(float64); ok && d > 0 {
+	if d, ok := raw["durationMs"].(float64); ok && d > 0 && d <= 24*60*60*1000 {
 		dur := int64(d)
 		durPtr = &dur
 	}
@@ -78,9 +65,9 @@ func TrackFromWire(raw map[string]interface{}) *Track {
 
 	return &Track{
 		VideoId:      vid,
-		Title:        title,
-		Artist:       artist,
-		ThumbnailUrl: thumbPtr,
+		Title:        clean.Text(title, 300),
+		Artist:       clean.Text(artist, 300),
+		ThumbnailUrl: clean.ImageURL(thumb),
 		DurationMs:   durPtr,
 		FromAutoplay: fromAutoplay,
 	}
@@ -88,19 +75,19 @@ func TrackFromWire(raw map[string]interface{}) *Track {
 
 // PlaybackState tracks playhead, playback mode, anchor timestamps, and queue sequencing.
 type PlaybackState struct {
-	Track         *Track   `json:"track"`
-	Queue         []*Track `json:"-"`
-	QueueIndex    int      `json:"queueIndex"`
-	IsPlaying     bool     `json:"isPlaying"`
-	PositionMs    int64    `json:"positionMs"`
-	AnchorMs      int64    `json:"anchorMs"`
-	Seq           int      `json:"seq"`
-	QueueSeq      int      `json:"queueSeq"`
-	UpdatedBy     *string  `json:"updatedBy"`
-	UpdatedAtMs   int64    `json:"updatedAtMs"`
-	StartedBy     *string  `json:"startedBy"`
-	StartedByName *string  `json:"startedByName"`
-	AutoplayEnabled bool   `json:"autoplayEnabled"`
+	Track           *Track   `json:"track"`
+	Queue           []*Track `json:"-"`
+	QueueIndex      int      `json:"queueIndex"`
+	IsPlaying       bool     `json:"isPlaying"`
+	PositionMs      int64    `json:"positionMs"`
+	AnchorMs        int64    `json:"anchorMs"`
+	Seq             int      `json:"seq"`
+	QueueSeq        int      `json:"queueSeq"`
+	UpdatedBy       *string  `json:"updatedBy"`
+	UpdatedAtMs     int64    `json:"updatedAtMs"`
+	StartedBy       *string  `json:"startedBy"`
+	StartedByName   *string  `json:"startedByName"`
+	AutoplayEnabled bool     `json:"autoplayEnabled"`
 }
 
 func NewPlaybackState() *PlaybackState {
@@ -137,9 +124,28 @@ func (p *PlaybackState) touch(memberId *string) {
 }
 
 func (p *PlaybackState) touchQueue(memberId *string) {
+	p.trimHistory()
 	p.QueueSeq++
 	p.UpdatedBy = memberId
 	p.UpdatedAtMs = clock.NowMs()
+}
+
+// trimHistory drops the oldest played songs once the whole queue passes
+// MaxQueueTotal, so a long party's queue frames stay small.
+func (p *PlaybackState) trimHistory() {
+	excess := len(p.Queue) - config.MaxQueueTotal
+	played := p.QueueIndex
+	if played < 0 {
+		played = 0
+	}
+	if excess > played {
+		excess = played
+	}
+	if excess <= 0 {
+		return
+	}
+	p.Queue = append([]*Track(nil), p.Queue[excess:]...)
+	p.QueueIndex -= excess
 }
 
 func (p *PlaybackState) Play(memberId *string, positionMs *int64) {
@@ -215,7 +221,13 @@ func (p *PlaybackState) SetTrack(
 	}
 
 	p.StartedBy = memberId
-	p.StartedByName = memberName
+	// A copy: the member's own name changes when they rejoin, while this is
+	// read for frames after the party lock is gone.
+	p.StartedByName = nil
+	if memberName != nil {
+		name := *memberName
+		p.StartedByName = &name
+	}
 	p.touch(memberId)
 }
 
@@ -484,32 +496,45 @@ func (p *PlaybackState) QueueToWire() map[string]interface{} {
 	return map[string]interface{}{
 		"seq":   p.QueueSeq,
 		"index": p.QueueIndex,
-		"items": p.Queue,
+		// A copy: queue edits shift the live slice in place, and frames are
+		// encoded after the party lock is released.
+		"items": append([]*Track(nil), p.Queue...),
 	}
 }
 
 // Member represents a joined device.
 type Member struct {
-	MemberId           string  `json:"memberId"`
-	UserId             string  `json:"userId"`
-	DeviceId           string  `json:"-"`
-	DisplayName        string  `json:"displayName"`
-	AvatarUrl          *string `json:"avatarUrl,omitempty"`
-	Token              string  `json:"-"`
-	IsHost             bool    `json:"isHost"`
-	Connected          bool    `json:"connected"`
-	JoinedAtMs         int64   `json:"joinedAtMs"`
-	LastSeenMs         int64   `json:"lastSeenMs"`
-	ControlBudget      float64 `json:"-"`
-	ControlBudgetAtMs  int64   `json:"-"`
-	FrameBudget        float64 `json:"-"`
-	FrameBudgetAtMs    int64   `json:"-"`
+	MemberId          string  `json:"memberId"`
+	UserId            string  `json:"userId"`
+	DeviceId          string  `json:"-"`
+	DisplayName       string  `json:"displayName"`
+	AvatarUrl         *string `json:"avatarUrl,omitempty"`
+	Token             string  `json:"-"`
+	IsHost            bool    `json:"isHost"`
+	Connected         bool    `json:"connected"`
+	JoinedAtMs        int64   `json:"joinedAtMs"`
+	LastSeenMs        int64   `json:"lastSeenMs"`
+	ControlBudget     float64 `json:"-"`
+	ControlBudgetAtMs int64   `json:"-"`
+	FrameBudget       float64 `json:"-"`
+	FrameBudgetAtMs   int64   `json:"-"`
+	// Reactions is whether this member's app said it can show reactions.
+	Reactions       bool    `json:"-"`
+	ReactBudget     float64 `json:"-"`
+	ReactBudgetAtMs int64   `json:"-"`
+	// Violations counts frames refused for being over budget; too many closes
+	// the socket.
+	Violations      int `json:"-"`
+	publicUserId    string
+	ReclaimedAtMs   int64   `json:"-"`
+	QueueBudget     float64 `json:"-"`
+	QueueBudgetAtMs int64   `json:"-"`
 }
 
 func (m *Member) ToWire() map[string]interface{} {
 	return map[string]interface{}{
 		"memberId":    m.MemberId,
-		"userId":      m.UserId,
+		"userId":      m.publicUserId,
 		"displayName": m.DisplayName,
 		"avatarUrl":   m.AvatarUrl,
 		"isHost":      m.IsHost,
@@ -536,6 +561,21 @@ type Party struct {
 	CreatedAtMs     int64
 	TouchedAtMs     int64
 	EmptySinceMs    *int64
+	// CreatorKey is the address (an IPv6 /64) that created the party, for the
+	// per-address limit on live parties.
+	CreatorKey string
+	NetworkKey string
+	// EverConnected is false until somebody opens a socket. A party nobody
+	// ever connects to is dropped after UnclaimedPartyTTLMs.
+	EverConnected bool
+	// removed holds the devices the host removed, kept out for the rest of
+	// the party.
+	removed map[string]bool
+	// The party's own reaction allowance, on top of each member's.
+	reactBudget   float64
+	reactBudgetAt int64
+	// ReactionSeq numbers reactions so a device never shows one twice.
+	ReactionSeq int64
 }
 
 func NewParty(code string) *Party {
@@ -549,13 +589,16 @@ func NewPartyWithMaxMembers(code string, maxMembers int) *Party {
 	now := clock.NowMs()
 	empty := now
 	return &Party{
-		Code:         code,
-		Members:      make(map[string]*Member),
-		Playback:     NewPlaybackState(),
-		MaxMembers:   maxMembers,
-		CreatedAtMs:  now,
-		TouchedAtMs:  now,
-		EmptySinceMs: &empty,
+		Code:          code,
+		Members:       make(map[string]*Member),
+		Playback:      NewPlaybackState(),
+		MaxMembers:    maxMembers,
+		CreatedAtMs:   now,
+		TouchedAtMs:   now,
+		EmptySinceMs:  &empty,
+		removed:       make(map[string]bool),
+		reactBudget:   config.PartyReactRatePerSecond,
+		reactBudgetAt: now,
 	}
 }
 
@@ -575,14 +618,52 @@ func (p *Party) Host() *Member {
 	return nil
 }
 
-func (p *Party) Join(userId, deviceId, displayName string, avatarUrl *string) (*Member, error) {
-	now := clock.NowMs()
-	// Rejoining device check
+// MemberByDevice is the member that joined from deviceId, if any.
+func (p *Party) MemberByDevice(deviceId string) *Member {
 	for _, m := range p.Members {
 		if m.DeviceId == deviceId {
+			return m
+		}
+	}
+	return nil
+}
+
+// reclaimQuietMs is how long a connected member's socket must have been
+// silent before its device id may take the place back. Apps ping every few
+// seconds, so a live one never is.
+const reclaimQuietMs = 35_000
+
+// publicUserId is what other members see as a member's user id: the same
+// for one person's devices within a party, different in every party, so
+// nobody can follow someone from party to party by it.
+func publicUserId(code, userId string) string {
+	sum := sha256.Sum256([]byte("wavebit-party|" + code + "|" + userId))
+	return hex.EncodeToString(sum[:16])
+}
+
+func (p *Party) Join(userId, deviceId, displayName string, avatarUrl *string) (*Member, error) {
+	now := clock.NowMs()
+	if p.removed[deviceId] || p.removed["u:"+userId] {
+		return nil, NewPartyError(403, "removed", "The host removed this device from the party.")
+	}
+	// Rejoining device check. The caller closes the old socket, since the old
+	// token stops working here.
+	for _, m := range p.Members {
+		if m.DeviceId == deviceId {
+			// A device id is only as secret as the app keeps it, so a place
+			// whose socket is alive and talking can't be taken over with it.
+			// A device that crashed falls silent, and gets its place back.
+			if m.Connected && now-m.LastSeenMs < reclaimQuietMs {
+				return nil, NewPartyError(409, "already_connected", "This device is still connected to that party.")
+			}
+			if m.ReclaimedAtMs != 0 && now-m.ReclaimedAtMs < 2000 {
+				return nil, NewPartyError(429, "rejoin_too_fast", "Wait a moment before rejoining.")
+			}
+			m.ReclaimedAtMs = now
 			m.DisplayName = displayName
 			m.AvatarUrl = avatarUrl
 			m.UserId = userId
+			m.publicUserId = publicUserId(p.Code, userId)
 			m.LastSeenMs = now
 			m.Token = randomToken(24)
 			p.Touch()
@@ -597,6 +678,7 @@ func (p *Party) Join(userId, deviceId, displayName string, avatarUrl *string) (*
 	m := &Member{
 		MemberId:          randomHex(8),
 		UserId:            userId,
+		publicUserId:      publicUserId(p.Code, userId),
 		DeviceId:          deviceId,
 		DisplayName:       displayName,
 		AvatarUrl:         avatarUrl,
@@ -609,6 +691,8 @@ func (p *Party) Join(userId, deviceId, displayName string, avatarUrl *string) (*
 		ControlBudgetAtMs: now,
 		FrameBudget:       config.FrameRatePerSecond,
 		FrameBudgetAtMs:   now,
+		ReactBudget:       config.ReactBurst,
+		ReactBudgetAtMs:   now,
 	}
 	p.Members[m.MemberId] = m
 	p.Touch()
@@ -670,15 +754,81 @@ func (p *Party) Remove(memberId string) *Member {
 		return nil
 	}
 	delete(p.Members, memberId)
-	if m.IsHost && len(p.Members) > 0 {
-		for _, next := range p.Members {
-			next.IsHost = true
-			break
+	wasHost := m.IsHost
+	// A removed member keeps no rights, even through a socket that is still
+	// open for a moment.
+	m.IsHost = false
+	if wasHost && len(p.Members) > 0 {
+		// The longest-standing member, preferring one who is connected, so the
+		// new host is predictable rather than whatever the map yields first.
+		var next *Member
+		for _, cand := range p.Members {
+			if next == nil ||
+				(cand.Connected && !next.Connected) ||
+				(cand.Connected == next.Connected && cand.JoinedAtMs < next.JoinedAtMs) {
+				next = cand
+			}
 		}
+		next.IsHost = true
 	}
 	p.Touch()
 	p.refreshEmptiness()
 	return m
+}
+
+// Ban keeps a removed member's device out for the rest of the party.
+func (p *Party) Ban(m *Member) {
+	p.removed[m.DeviceId] = true
+	p.removed["u:"+m.UserId] = true
+}
+
+// IsMember reports whether m is still in the party. A socket checks this on
+// every frame, so leaving or being removed ends what that socket may do.
+func (p *Party) IsMember(m *Member) bool {
+	return p.Members[m.MemberId] == m
+}
+
+// SpendQueueBudget takes one queue edit from the member's allowance.
+func (p *Party) SpendQueueBudget(member *Member) bool {
+	now := clock.NowMs()
+	if member.QueueBudgetAtMs == 0 {
+		member.QueueBudget, member.QueueBudgetAtMs = config.QueueEditBurst, now
+	}
+	if elapsed := float64(now-member.QueueBudgetAtMs) / 1000.0; elapsed > 0 {
+		member.QueueBudget += elapsed * config.QueueEditsPerSecond
+	}
+	if member.QueueBudget > config.QueueEditBurst {
+		member.QueueBudget = config.QueueEditBurst
+	}
+	member.QueueBudgetAtMs = now
+	if member.QueueBudget < 1 {
+		return false
+	}
+	member.QueueBudget--
+	return true
+}
+
+// SpendReactBudget takes one reaction from the member's allowance (a burst of
+// ReactBurst, refilling at ReactRatePerSecond) and from the party's.
+func (p *Party) SpendReactBudget(member *Member) bool {
+	now := clock.NowMs()
+	refill := func(budget *float64, at *int64, rate, burst float64) {
+		if elapsed := float64(now-*at) / 1000.0; elapsed > 0 {
+			*budget += elapsed * rate
+		}
+		if *budget > burst {
+			*budget = burst
+		}
+		*at = now
+	}
+	refill(&member.ReactBudget, &member.ReactBudgetAtMs, config.ReactRatePerSecond, config.ReactBurst)
+	refill(&p.reactBudget, &p.reactBudgetAt, config.PartyReactRatePerSecond, config.PartyReactRatePerSecond)
+	if member.ReactBudget < 1 || p.reactBudget < 1 {
+		return false
+	}
+	member.ReactBudget--
+	p.reactBudget--
+	return true
 }
 
 func (p *Party) SpendControlBudget(member *Member) bool {
@@ -720,6 +870,9 @@ func (p *Party) SpendFrameBudget(member *Member) bool {
 }
 
 func (p *Party) MarkConnected(member *Member, connected bool) {
+	if connected {
+		p.EverConnected = true
+	}
 	member.Connected = connected
 	member.LastSeenMs = clock.NowMs()
 	p.Touch()
@@ -754,6 +907,14 @@ func (p *Party) ExpiredMembers(now int64) []*Member {
 
 func (p *Party) IsExpired(now int64) bool {
 	if now-p.CreatedAtMs > config.PartyMaxAgeMs {
+		return true
+	}
+	// Nobody left: whoever joined next would become host of a stranger's
+	// party. The grace covers the moment between creating and joining.
+	if len(p.Members) == 0 && now-p.CreatedAtMs > 5000 {
+		return true
+	}
+	if !p.EverConnected && now-p.CreatedAtMs > config.UnclaimedPartyTTLMs {
 		return true
 	}
 	if p.EmptySinceMs != nil {
@@ -836,16 +997,47 @@ func (s *PartyStore) CreateWithLimit(maxParties int) (*Party, error) {
 }
 
 func (s *PartyStore) CreateWithLimits(maxParties, maxMembers int) (*Party, error) {
+	return s.CreateFor("", "", maxParties, maxMembers)
+}
+
+// CreateFor makes a party for creatorKey, refusing once that address already
+// holds MaxPartiesPerClient live parties, or its network (an IPv6 /48,
+// networkKey) MaxPartiesPerNetwork. Empty keys are not limited.
+func (s *PartyStore) CreateFor(creatorKey, networkKey string, maxParties, maxMembers int) (*Party, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if maxParties > 0 && len(s.parties) >= maxParties {
 		return nil, NewPartyError(503, "server_full", "The party server is busy. Please try again in a few minutes.")
 	}
+	if creatorKey != "" && config.MaxPartiesPerClient > 0 {
+		held := 0
+		for _, p := range s.parties {
+			if p.CreatorKey == creatorKey {
+				held++
+			}
+		}
+		if held >= config.MaxPartiesPerClient {
+			return nil, NewPartyError(429, "too_many_parties", "This network already has several parties running. End one first.")
+		}
+	}
+	if networkKey != "" && config.MaxPartiesPerNetwork > 0 {
+		held := 0
+		for _, p := range s.parties {
+			if p.NetworkKey == networkKey {
+				held++
+			}
+		}
+		if held >= config.MaxPartiesPerNetwork {
+			return nil, NewPartyError(429, "too_many_parties", "This network already has several parties running. End one first.")
+		}
+	}
 
 	for i := 0; i < 12; i++ {
 		code := codes.NewCode()
 		if _, exists := s.parties[code]; !exists {
-		p := NewPartyWithMaxMembers(code, maxMembers)
+			p := NewPartyWithMaxMembers(code, maxMembers)
+			p.CreatorKey = creatorKey
+			p.NetworkKey = networkKey
 			s.parties[code] = p
 			return p, nil
 		}
@@ -887,12 +1079,12 @@ func (s *PartyStore) All() []*Party {
 	return res
 }
 
+// Sweep removes members whose grace ran out and parties that are over. Each
+// party is locked on its own, never under the store lock, so a party busy with
+// one slow request can't hold up every lookup on the server.
 func (s *PartyStore) Sweep(now int64) []*Party {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var changed []*Party
-	for code, party := range s.parties {
+	var changed, over []*Party
+	for _, party := range s.All() {
 		party.Lock()
 		gone := party.ExpiredMembers(now)
 		for _, m := range gone {
@@ -902,12 +1094,21 @@ func (s *PartyStore) Sweep(now int64) []*Party {
 		party.Unlock()
 
 		if expired {
-			delete(s.parties, code)
+			over = append(over, party)
 			continue
 		}
 		if len(gone) > 0 {
 			changed = append(changed, party)
 		}
+	}
+	if len(over) > 0 {
+		s.mu.Lock()
+		for _, party := range over {
+			if s.parties[party.Code] == party {
+				delete(s.parties, party.Code)
+			}
+		}
+		s.mu.Unlock()
 	}
 	return changed
 }

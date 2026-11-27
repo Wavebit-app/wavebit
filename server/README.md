@@ -1,15 +1,18 @@
-# BitChord — Listen Together
+# wavebit — Listen together server
 
-The party server behind **Listen together**: create a six-character code, share
-it, and up to five signed-in devices listen to the same thing at the same time.
-Anyone in the party can control the music.
+The party server behind wavebit's **Listen together**: create a six-character
+code, share it, and up to five devices listen to the same thing at the same
+time. Go and one WebSocket per device, no database.
 
-Go + a WebSocket per device, no database, deployed as a single Render web
-service.
+It began as [BitChord](https://github.com/kushagrasinghx/BitChord)'s
+`backend/` (GPL-3.0; see [NOTICE.md](NOTICE.md)) and speaks the same protocol,
+so BitChord's apps can join a party here and wavebit can join one on
+BitChord's server. What this copy adds is listed under
+[What's different here](#whats-different-here).
 
 ```bash
-go run .
-go test -v ./...
+go run ./cmd/wavebit-party        # listens on 127.0.0.1:8000
+go test -race ./...
 ```
 
 ---
@@ -26,14 +29,14 @@ at**:
 
 ```jsonc
 {
-  "positionMs": 42000,          // where the party was...
-  "anchorMs": 1757630001234,    // ...at this instant on the server's clock
-  "isPlaying": true
+  "positionMs": 42000, // where the party was...
+  "anchorMs": 1757630001234, // ...at this instant on the server's clock
+  "isPlaying": true,
 }
 ```
 
 Each device knows its own offset from that clock, so it can answer "where should
-I be *right now*" locally, whenever it likes, without another round trip:
+I be _right now_" locally, whenever it likes, without another round trip:
 
 ```
 serverNow   = deviceNow + clockOffset
@@ -48,7 +51,7 @@ trick, and four things protect it:
 1. **The clock offset is measured, not assumed.** Each device sends
    `{"type":"ping","clientMs":…}`; the server replies with that stamp untouched
    plus its own. Offset is `serverMs - (t0 + t1) / 2`, error is bounded by half
-   the round trip, and keeping the sample with the *smallest* round trip is what
+   the round trip, and keeping the sample with the _smallest_ round trip is what
    makes this accurate over mobile data. Same idea as NTP. `GET /api/time` gives
    a client a first estimate before it has a socket.
 2. **The server clock never jumps.** `clock/clock.go` reads the wall clock once
@@ -64,7 +67,7 @@ trick, and four things protect it:
    a phone coming back from doze, an offset that has wandered — none of those
    announce themselves, so correctness must not depend on anyone asking.
 
-The server's state is the truth. Devices *report* their real playhead
+The server's state is the truth. Devices _report_ their real playhead
 (`{"type":"report"}`), but that is only logged — a party is never averaged
 towards a straggler on a bad connection.
 
@@ -76,7 +79,7 @@ names and avatars in the member list on every device.
 
 **The server cannot verify that claim**, and is written on the assumption it
 never will: it holds no Google credential, and an Innertube round trip per join
-would be both slow and another way to get rate-limited. What *is* server-held is
+would be both slow and another way to get rate-limited. What _is_ server-held is
 the **token** minted on join — unguessable, returned exactly once, and required
 on every call afterwards. So a member can lie about who they are; they cannot
 act as a member they are not, or join a party whose code they were not given.
@@ -111,14 +114,16 @@ matching Kotlin's naming keeps `@SerialName` off every field.
 
 ### REST
 
-| | |
-|---|---|
-| `GET /healthz` | Render's health check. |
-| `GET /api/time` | `{"serverMs":…}` — a clock sample before the socket exists. |
-| `POST /api/parties` | Create a party and join it as host. Body: `userId`, `deviceId`, `displayName`, `avatarUrl?`. → `201` with `code`, `token`, `you`, `party`. Creation is capped per IP and by the service-wide party limit. |
-| `POST /api/parties/{code}/join` | Same body. `404` unknown code, `409` full, `422` no identity. The code is normalised first, so lower case, spaces, and `O`/`I`/`L` typed for `0`/`1` all work. |
-| `GET /api/parties/{code}` | Full snapshot. Needs `Authorization: Bearer <token>`. |
-| `POST /api/parties/{code}/leave` | Give up the slot. Needs the bearer token. |
+|                                   |                                                                                                                                                                                                           |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /`                           | `{"service", "parties", "members", "serverMs", "features"}`. `features` lists what this server adds to the protocol; BitChord's sends none.                                                               |
+| `GET /healthz`                    | Health check.                                                                                                                                                                                             |
+| `GET /api/time`                   | `{"serverMs":…}` — a clock sample before the socket exists.                                                                                                                                               |
+| `POST /api/parties`               | Create a party and join it as host. Body: `userId`, `deviceId`, `displayName`, `avatarUrl?`. → `201` with `code`, `token`, `you`, `party`. Creation is capped per IP and by the service-wide party limit. |
+| `POST /api/parties/{code}/join`   | Same body. `404` unknown code, `409` full, `422` no identity. The code is normalised first, so lower case, spaces, and `O`/`I`/`L` typed for `0`/`1` all work.                                            |
+| `GET /api/parties/{code}`         | Full snapshot. Needs `Authorization: Bearer <token>`.                                                                                                                                                     |
+| `GET /api/parties/{code}/preview` | Who is in a party, before joining: names, pictures, how full.                                                                                                                                             |
+| `POST /api/parties/{code}/leave`  | Give up the slot. Needs the bearer token. Closes that device's socket.                                                                                                                                    |
 
 ### WebSocket — `/ws/parties/{code}`
 
@@ -150,6 +155,7 @@ Client → server:
 {"type": "control", "action": "next"}
 {"type": "control", "action": "previous"}
 {"type": "control", "action": "setHostOnlyControl", "enabled": true}   // host only
+{"type": "react",   "reaction": "fire"}     // wavebit addition, see Reactions
 ```
 
 `setMaxMembers`, `kick` and `setHostOnlyControl` are host-only and answer
@@ -170,7 +176,7 @@ device may rejoin immediately as far as it is concerned — but the reason lets 
 client shut its own door, which is what the Android app does for 24 hours.
 
 A `track` is `{videoId, title, artist, thumbnailUrl, durationMs, fromAutoplay}` — enough to
-identify and to *show* a song, and nothing more. Stream URLs, sources, quality
+identify and to _show_ a song, and nothing more. Stream URLs, sources, quality
 and download state stay each device's own business, so two people in a party can
 be on different sources at different bitrates and still be in the same place.
 
@@ -190,7 +196,26 @@ Server → client:
 {"type": "members", "members": [{…}], "maxMembers": 5, "serverMs": …}
 {"type": "error",   "error": "rate_limited", "message": "…"}
 {"type": "bye",     "reason": "left"}
+{"type": "reaction", "id": 12, "memberId": "…", "reaction": "fire", "atMs": …}  // wavebit addition
 ```
+
+`welcome` also carries `"features": ["reactions"]` here.
+
+### Reactions
+
+A wavebit addition. An app that can show reactions says so when it creates or
+joins: `"features": ["reactions"]` in the body (BitChord's server ignores the
+field). Any member may then send `{"type":"react","reaction":"<id>"}` with one
+of the ids in [`protocol/reactions.json`](protocol/reactions.json):
+`heart fire laugh wow sad clap party dance`. The ids are all that travel;
+each app draws its own emoji, so a reaction can never carry text.
+
+- The server fills in who sent it and numbers it (`id` only climbs).
+- It goes to every socket that declared the feature, the sender included.
+  Apps that didn't (BitChord's) never see one.
+- Each member may send a burst of 5, then 3 a second; a party as a whole 15 a
+  second. An unknown id or a spent allowance is dropped without an answer.
+- Host-only control doesn't apply: a reaction changes nothing anyone hears.
 
 Every mutation bumps `playback.seq`. **Clients must ignore any state whose `seq`
 is not greater than the last one they applied** — that is what makes two people
@@ -206,7 +231,7 @@ frame as everyone else rather than running on a state it predicted locally.
 - **whole, in a snapshot** — `welcome` and `GET /api/parties/{code}` both carry
   `party.queue`, because a device that has just arrived has no other way to
   learn it;
-- **on change** — a queue control broadcasts a `queue` frame *before* the
+- **on change** — a queue control broadcasts a `queue` frame _before_ the
   `state` frame, so nobody ever holds a state pointing at an index in a list
   they have not been given;
 - **on request** — a client whose `queue.seq` disagrees with the `queueSeq` in a
@@ -244,112 +269,156 @@ To keep memory, bandwidth, and latency strictly bounded:
   entirely such tracks succeeds without changing the queue. Hand-queued tracks
   are never filtered.
 
-## Deploying to Oracle Cloud (Always Free)
+## What's different here
 
-This is what runs `https://api.bitchord.kushagrasingh.in`: one Always Free
-`VM.Standard.E2.1.Micro` (1 OCPU, 1 GB) on Ubuntu 24.04 in ap-mumbai-1, with
-Caddy in front for HTTPS and WebSockets. Files are in `deploy/`.
+The protocol is BitChord's. On top of it this server adds:
 
-1. **Create the VM**: Compute -> Instances -> Create. Image *Canonical Ubuntu
-   24.04*, shape *VM.Standard.E2.1.Micro* (tagged Always Free), public subnet,
-   public IPv4 on, paste your SSH public key.
-2. **Open 80/443 in the VCN**: Networking -> VCN -> Security -> *Default
-   Security List* -> Add Ingress Rule: source `0.0.0.0/0`, TCP, destination
-   ports `80,443`.
-3. **DNS**: an `A` record for the host name pointing at the VM's public IP.
-   It has to resolve before step 4 can get a certificate.
-4. **Install** (from a copy of `backend/` on the VM):
+- **Reactions** and a `features` list (see Reactions above).
+- **One socket per member.** Leaving or being removed closes it, and every
+  frame checks the sender is still in the party.
+- **A queue and a writer per socket.** Sending never waits on the network; a
+  device more than `JAM_SEND_QUEUE_FRAMES` frames or `JAM_SEND_QUEUE_BYTES`
+  bytes behind is dropped.
+- **Bounded parties.** The whole queue, played songs included, is capped at
+  `JAM_MAX_QUEUE_TOTAL`, and queue edits have an allowance of their own.
+- **Limits on looking up codes.** Requests without a token count against
+  per-address, per-network and shared allowances for wrong codes, and every
+  kind of miss gets the same answer. Members with a token are never held back
+  by them.
+- **Limits on making parties**, per address (an IPv6 /64) and per network (an
+  IPv6 /48). A party nobody connects to ends after 30 s.
+- **Forwarded client addresses only from trusted proxies**
+  (`JAM_TRUSTED_PROXIES`), and loopback by default.
+- **Removed devices stay out** for the rest of the party. A device id only
+  takes a place back once the socket holding it has gone quiet.
+- **Cleaned input.** Song ids must look like ids, names and titles lose
+  direction overrides and invisible characters, and pictures must be https on
+  Google, YouTube or Spotify hosts. Other members see a user id that is
+  different in every party.
+- **Server pings.** A socket silent for 75 s is closed.
+- **The host passes to the longest-standing member**, and a party with nobody
+  left ends.
+- Not included: the presence counter, its stats endpoints and the drift log.
 
-   ```sh
-   sudo DOMAIN=api.bitchord.kushagrasingh.in bash deploy/setup.sh
-   ```
+## Running your own
 
-   It installs Go, builds the server into `/opt/bitchord-jam`, runs it as the
-   `bitchord-jam` systemd service on `:8000`, installs Caddy for the domain, and
-   opens 80/443 in the VM's own iptables. Oracle's Ubuntu images carry a REJECT
-   rule besides the security list, so both have to be opened. Re-run the same
-   command to deploy a new build.
+The server holds parties in memory, so run **one** instance. It wants a proxy
+in front for HTTPS.
 
-Check it with `curl https://<domain>/healthz`. Logs are in
-`journalctl -u bitchord-jam` and `journalctl -u caddy`.
+### A VM with Caddy (systemd)
 
-## Deploying to Render
+On an Ubuntu 22.04/24.04 VM with a DNS name pointing at it (Oracle Cloud's
+Always Free shapes are enough):
 
-The blueprint is `render.yaml`, but Render reads blueprints from the repository
-root and this one lives in `backend/`. Either copy it up a level, or create the
-service by hand — which is one screen:
-
-- **New → Web Service**, connect this repo
-- **Root Directory** `backend`
-- **Runtime** Go
-- **Build Command** `go build -o server .`
-- **Start Command** `./server`
-- **Health check path** `/healthz`
-- **Instances** 1
-
-Then point the app at `https://<service>.onrender.com`, by adding this to
-`local.properties` at the repository root:
-
-```properties
-LISTEN_TOGETHER_SERVER=https://<service>.onrender.com
+```sh
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o wavebit-party ./cmd/wavebit-party
+sha256sum wavebit-party            # note it
+scp -r wavebit-party deploy you@vm:
+ssh you@vm 'sudo DOMAIN=party.example.com BINARY=./wavebit-party SHA256=<hex> bash deploy/setup.sh'
 ```
 
-That becomes `BuildConfig.LISTEN_TOGETHER_SERVER` and seeds the address box on
-the Listen Together screen. It is only a default — anything typed into that box
-wins and persists, so running your own copy of this server never means editing
-the build. `local.properties` is gitignored, so a fresh checkout builds with an
-empty default and simply asks for an address the first time the screen is
-opened.
+`setup.sh` checks the hash, installs the binary as the hardened
+`wavebit-party` service (`deploy/wavebit-party.service`: no privileges, a
+400 MB memory cap, loopback only), puts Caddy in front for TLS and opens 80
+and 443. It compiles nothing and fetches nothing to run as root. Re-run it
+with a new binary to deploy. Logs: `journalctl -u wavebit-party`.
 
-Two things about Render specifically:
+### Docker
 
-- **Keep it to one instance.** A party lives in the memory of the instance
-  holding its WebSockets, so a second instance is a second, disjoint set of
-  parties, and a join lands in whichever one the load balancer picked. Outgrowing
-  that is a Redis pub/sub swap behind `PartyStore` — nothing above it moves.
-- **The free plan spins down after ~15 minutes idle**, which closes every
-  WebSocket and drops every party, and the next request then waits ~30 s for a
-  cold start. Fine for development; for real use this wants the paid instance
-  type, where the process stays up (or a free uptime monitor pinging `/healthz`
-  every 12 minutes).
+```sh
+DOMAIN=party.example.com docker compose -f deploy/compose.yaml up -d --build
+```
+
+The image is a static binary on distroless, running as `nonroot`.
+`deploy/compose.yaml` puts Caddy in front and only Caddy's network may name
+the client's address.
+
+### Behind Cloudflare
+
+Uncomment the `trusted_proxies` lines in the Caddyfile with Cloudflare's
+current ranges, and let only those ranges reach 443, or anyone can set
+`CF-Connecting-IP`.
+
+### The relay, for Host on this device
+
+`cmd/wavebit-relay` lets a host's friends reach its computer when routers
+won't let them connect directly (about 3 in 10 cases). Public libp2p relays
+cut a connection after 2 minutes or 128 KiB, so wavebit runs its own. It
+passes bytes both ends encrypt, holds a slot per host for an hour at a time,
+at most 8 per address, and cuts a relayed connection after 30 minutes or 32
+MiB (the app reconnects).
+
+```sh
+CGO_ENABLED=0 go build -trimpath -o wavebit-relay ./cmd/wavebit-relay
+sudo install -m 755 wavebit-relay /opt/wavebit-party/
+sudo install -m 644 deploy/wavebit-relay.service /etc/systemd/system/
+sudo systemctl enable --now wavebit-relay
+journalctl -u wavebit-relay | grep /p2p/   # the address to give wavebit
+```
+
+Open 4001 TCP and UDP. Its DNS name must not go through Cloudflare's proxy.
+The address it prints, ending in `/p2p/<id>`, goes in Settings › Listen
+together › Relay address, or into wavebit's build as its default relay.
+
+### Pointing wavebit at it
+
+Settings › Listen together › Party server › Custom, and type the address.
+Anyone joining with your invite link is asked first, then joins there.
 
 ### Environment
 
 Every one of these is optional — `config/config.go` carries the same defaults.
 
-| Variable | Default | |
-|---|---|---|
-| `JAM_MAX_MEMBERS` | `5` | Devices per party. |
-| `JAM_STATE_HEARTBEAT_MS` | `5000` | How often the truth is re-stated. |
-| `JAM_PLAY_LEAD_MS` | `350` | How far ahead a resume is scheduled. |
-| `JAM_MAX_UPCOMING_QUEUE` | `25` | Maximum upcoming tracks in shared queue. |
-| `JAM_MAX_QUEUE_LENGTH` | `26` | Hard limit on total queue length (`1 + MaxUpcomingQueue`). |
-| `JAM_DISCONNECT_GRACE_MS` | `45000` | How long a lost socket keeps its slot. |
-| `JAM_EMPTY_PARTY_TTL_MS` | `120000` | How long an empty party survives. |
-| `JAM_PARTY_MAX_AGE_MS` | `43200000` | Hard ceiling on a party's life. |
-| `JAM_CONTROL_RATE_PER_SECOND` | `25` | Per-member control ceiling. |
-| `JAM_FRAME_RATE_PER_SECOND` | `30` | Per-member WebSocket frame ceiling, including ping and sync frames. |
-| `JAM_MAX_PARTIES` | `50` | Maximum concurrent parties. Conservative default for Render Free (250 sockets at five devices each). |
-| `JAM_CREATE_RATE_PER_MINUTE` | `2` | Maximum new parties per client IP per minute. |
-| `JAM_RATE_LIMIT_MAX_ENTRIES` | `10000` | Maximum tracked client IPs before new creations are rejected, preventing the limiter itself from growing without bound. |
-| `JAM_REQUEST_MAX_BYTES` | `16384` | Maximum REST request size. |
-| `JAM_WEBSOCKET_MAX_BYTES` | `16384` | Maximum incoming WebSocket message size. |
-| `JAM_CONNECTION_IDLE_MS` | `900000` | Close a WebSocket that sends no message for 15 minutes. |
-| `JAM_ALLOWED_ORIGINS` | *(none)* | Comma-separated browser Origin allowlist. Native clients send no Origin and remain supported. |
-| `JAM_TRUST_PROXY` | `false` | Read `X-Forwarded-For` for rate limiting only when a trusted proxy terminates requests. |
-| `JAM_PUBLIC_ORIGIN` | *(none)* | Public origin emitted verbatim in invite deep links, e.g. `https://party.example.com`. Set it when TLS terminates upstream and `X-Forwarded-Proto` may be rewritten or dropped along the way. |
-| `PORT` | `8000` | Port the server listens on. |
+| Variable                                                                 | Default                |                                                                                                                                                                                               |
+| ------------------------------------------------------------------------ | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JAM_MAX_MEMBERS`                                                        | `5`                    | Devices per party.                                                                                                                                                                            |
+| `JAM_STATE_HEARTBEAT_MS`                                                 | `5000`                 | How often the truth is re-stated.                                                                                                                                                             |
+| `JAM_PLAY_LEAD_MS`                                                       | `350`                  | How far ahead a resume is scheduled.                                                                                                                                                          |
+| `JAM_MAX_UPCOMING_QUEUE`                                                 | `25`                   | Maximum upcoming tracks in shared queue.                                                                                                                                                      |
+| `JAM_MAX_QUEUE_LENGTH`                                                   | `26`                   | Hard limit on total queue length (`1 + MaxUpcomingQueue`).                                                                                                                                    |
+| `JAM_DISCONNECT_GRACE_MS`                                                | `45000`                | How long a lost socket keeps its slot.                                                                                                                                                        |
+| `JAM_EMPTY_PARTY_TTL_MS`                                                 | `120000`               | How long an empty party survives.                                                                                                                                                             |
+| `JAM_PARTY_MAX_AGE_MS`                                                   | `43200000`             | Hard ceiling on a party's life.                                                                                                                                                               |
+| `JAM_CONTROL_RATE_PER_SECOND`                                            | `25`                   | Per-member control ceiling.                                                                                                                                                                   |
+| `JAM_FRAME_RATE_PER_SECOND`                                              | `30`                   | Per-member WebSocket frame ceiling, including ping and sync frames.                                                                                                                           |
+| `JAM_MAX_PARTIES`                                                        | `50`                   | Maximum concurrent parties.                                                                                                                                                                   |
+| `JAM_CREATE_RATE_PER_MINUTE`                                             | `2`                    | Maximum new parties per client IP per minute.                                                                                                                                                 |
+| `JAM_RATE_LIMIT_MAX_ENTRIES`                                             | `10000`                | Maximum tracked client IPs before new creations are rejected, preventing the limiter itself from growing without bound.                                                                       |
+| `JAM_REQUEST_MAX_BYTES`                                                  | `16384`                | Maximum REST request size.                                                                                                                                                                    |
+| `JAM_WEBSOCKET_MAX_BYTES`                                                | `16384`                | Maximum incoming WebSocket message size.                                                                                                                                                      |
+| `JAM_CONNECTION_IDLE_MS`                                                 | `900000`               | Close a WebSocket that sends no message for 15 minutes.                                                                                                                                       |
+| `JAM_ALLOWED_ORIGINS`                                                    | _(none)_               | Comma-separated browser Origin allowlist. Native clients send no Origin and remain supported.                                                                                                 |
+| `JAM_MAX_QUEUE_TOTAL`                                                    | `200`                  | Whole queue including played songs.                                                                                                                                                           |
+| `JAM_MAX_PARTIES_PER_CLIENT`                                             | `3`                    | Live parties one address (IPv6 /64) may hold.                                                                                                                                                 |
+| `JAM_UNCLAIMED_PARTY_TTL_MS`                                             | `30000`                | How long a party nobody connected to lives.                                                                                                                                                   |
+| `JAM_LOOKUP_RATE_PER_MINUTE`                                             | `120`                  | Requests naming a code, per address.                                                                                                                                                          |
+| `JAM_MISS_RATE_PER_MINUTE`                                               | `12`                   | Wrong codes or tokens per address.                                                                                                                                                            |
+| `JAM_GLOBAL_MISS_RATE_PER_MINUTE`                                        | `1200`                 | Wrong codes or tokens across everyone.                                                                                                                                                        |
+| `JAM_SEND_QUEUE_FRAMES`                                                  | `64`                   | Frames a device may fall behind before it is dropped.                                                                                                                                         |
+| `JAM_PING_INTERVAL_MS` / `JAM_PONG_WAIT_MS`                              | `30000` / `75000`      | Server pings, and how long silence lasts before a socket is closed.                                                                                                                           |
+| `JAM_MAX_BUDGET_VIOLATIONS`                                              | `20`                   | Frames over budget before a socket is closed.                                                                                                                                                 |
+| `JAM_REACT_RATE_PER_SECOND` / `JAM_REACT_BURST` / `JAM_PARTY_REACT_RATE` | `3` / `5` / `15`       | Reaction allowances.                                                                                                                                                                          |
+| `JAM_LISTEN_ADDR`                                                        | `127.0.0.1:$PORT`      | Where to listen. The Docker image sets `0.0.0.0:8000`.                                                                                                                                        |
+| `JAM_TRUSTED_PROXIES`                                                    | `127.0.0.1/32,::1/128` | Peers whose forwarded client address is believed.                                                                                                                                             |
+| `JAM_CLIENT_IP_HEADER`                                                   | _(none)_               | One header naming the client (Caddy's `X-Real-IP`), read only from a trusted proxy.                                                                                                           |
+| `JAM_TRUST_PROXY`                                                        | `false`                | Without a named header, read the rightmost `X-Forwarded-For` hop, only from a trusted proxy.                                                                                                  |
+| `JAM_PUBLIC_ORIGIN`                                                      | _(none)_               | Public origin emitted verbatim in invite deep links, e.g. `https://party.example.com`. Set it when TLS terminates upstream and `X-Forwarded-Proto` may be rewritten or dropped along the way. |
+| `PORT`                                                                   | `8000`                 | Port the server listens on.                                                                                                                                                                   |
 
 ## Layout
 
 ```
+cmd/wavebit-party/    The server binary
+cmd/wavebit-p2p/      The helper wavebit ships for Host on this device
+cmd/wavebit-relay/    The relay for it
+p2p/                  libp2p node, the 127.0.0.1 bridge, host and joiner sides
+listen/               REST routes, the socket loop, controls, frames, limits
+party/party.go        Party, Member, PlaybackState: the sync rule, in-memory state
+hub/hub.go            Who holds a socket; a queue and a writer per socket
+clean/clean.go        Cleaning names, titles, picture addresses and song ids
 clock/clock.go        The one clock, monotonic so anchors never jump
 codes/codes.go        Six-character codes, and reading a mistyped one charitably
 config/config.go      Environment knobs
-hub/hub.go            Who holds a socket, and how a frame reaches everyone
-party/party.go        Party, Member, PlaybackState — the sync rule, in-memory state
-protocol/protocol.go  Action and frame-type names
-main.go               REST routes, the socket loop, the heartbeat ticker
-main_test.go          REST endpoints and WebSocket integration tests
-party/party_test.go   Capacity limits, queue limits, delta moves, step
+protocol/             Action, frame and feature names; reactions.json
+deploy/               systemd unit, Caddyfile, setup.sh, compose.yaml
 ```

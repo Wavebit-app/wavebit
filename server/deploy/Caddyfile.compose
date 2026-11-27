@@ -1,0 +1,38 @@
+{
+	servers {
+		timeouts {
+			idle 5m
+		}
+		# Behind Cloudflare, uncomment and keep the ranges current from
+		# https://www.cloudflare.com/ips/, and allow only those ranges to
+		# reach 443 in the firewall. Without that, anyone could set the header.
+		# trusted_proxies static <cloudflare ranges>
+		# client_ip_headers CF-Connecting-IP
+	}
+}
+
+{$DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+	# Most requests are health probes. Answer them here instead of proxying.
+	handle /healthz {
+		header Content-Type application/json
+		header Cache-Control no-store
+		respond `{"ok":true}` 200
+	}
+	handle {
+		reverse_proxy party:8000 {
+			# The server reads exactly this header, and only from loopback.
+			header_up X-Real-IP {client_ip}
+			header_up -X-Forwarded-For
+			# A reload keeps open parties' sockets for a while instead of
+			# dropping every listener at once.
+			stream_close_delay 5m
+		}
+	}
+	# Tokens travel in Authorization (or a WebSocket subprotocol); keep access
+	# logs off, or redact Sec-WebSocket-Protocol if you turn them on.
+}
