@@ -1,7 +1,10 @@
 import { Activity, Minus, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { PartyProbe } from '../../../shared/schemas/party';
-import { DEFAULT_PARTY_SERVER } from '../../../shared/schemas/party';
+import {
+  type PartyProbe,
+  WAVEBIT_PARTY_SERVER,
+  WAVEBIT_RELAY,
+} from '../../../shared/schemas/party';
 import { IconAction } from '../../design/IconAction';
 import { Segmented } from '../../design/Segmented';
 import { count } from '../../lib/format';
@@ -51,10 +54,14 @@ export function PartySection() {
   const me = useParty((s) => s.me);
   const host = useParty((s) => s.serverHost);
   const inParty = useParty((s) => !!s.code);
+  const p2pAvailable = useParty((s) => s.p2pAvailable);
   const [probing, setProbing] = useState(false);
   const [probe, setProbe] = useState<PartyProbe | null>(null);
-  // An answer is about the address it was asked of.
-  useEffect(() => setProbe(null), [settings?.partyServer]);
+  // An answer is about the server it was asked of.
+  useEffect(
+    () => setProbe(null),
+    [settings?.partyServer, settings?.partyServerChoice],
+  );
   if (!settings) return null;
 
   const check = () => {
@@ -63,16 +70,28 @@ export function PartySection() {
       .probe()
       .then(setProbe)
       .catch(() =>
-        setProbe({ ok: false, roundTripMs: 0, parties: null, members: null }),
+        setProbe({
+          ok: false,
+          roundTripMs: 0,
+          parties: null,
+          members: null,
+          reactions: false,
+        }),
       )
       .finally(() => setProbing(false));
   };
+  const choice = settings.partyServerChoice;
   const typed = settings.partyServer.trim();
   // The address in use isn't the one typed: it was refused.
   const refused =
     !inParty &&
+    choice === 'custom' &&
     typed !== '' &&
     !typed.toLowerCase().replace(/\/+$/, '').endsWith(host);
+  const footer =
+    choice === 'wavebit' && !WAVEBIT_PARTY_SERVER
+      ? 'wavebit’s server isn’t running yet, so parties start on BitChord’s for now. Everyone in a party uses the server it was started on.'
+      : 'BitChord’s server lets wavebit and BitChord listeners share a party. Reactions aren’t available there. Everyone in a party uses the server it was started on.';
 
   const master = (
     <Group>
@@ -168,25 +187,27 @@ export function PartySection() {
           isSelected={settings.partyNotices}
           onChange={(partyNotices) => update.mutate({ partyNotices })}
         />
-      </Group>
-      <Group
-        title="Party server"
-        footer={`Leave the address empty to use BitChord’s server (${DEFAULT_PARTY_SERVER.replace('https://', '')}), so wavebit and BitChord listeners can share a party. Everyone in a party uses the server it was started on.`}
-      >
-        <Row
-          id="partyServer"
-          hint={
-            refused
-              ? `That address can’t be used; it has to be an https address. Using ${host}.`
-              : undefined
+        <SettingSwitch
+          id="partyShowReactions"
+          isSelected={settings.partyShowReactions}
+          onChange={(partyShowReactions) =>
+            update.mutate({ partyShowReactions })
           }
-        >
-          <TextSetting
-            value={settings.partyServer}
-            onSave={(partyServer) => update.mutate({ partyServer })}
-            placeholder={DEFAULT_PARTY_SERVER.replace('https://', '')}
-            maxLength={200}
-            aria-label="Party server address"
+        />
+      </Group>
+      <Group title="Party server" footer={footer}>
+        <Row id="partyServerChoice">
+          <Segmented
+            label="Party server"
+            value={choice}
+            onChange={(partyServerChoice) =>
+              update.mutate({ partyServerChoice })
+            }
+            options={[
+              { value: 'wavebit', label: 'wavebit' },
+              { value: 'bitchord', label: 'BitChord' },
+              { value: 'custom', label: 'Custom' },
+            ]}
           />
           <IconAction
             label="Check the server"
@@ -197,6 +218,24 @@ export function PartySection() {
             <Activity size={20} aria-hidden />
           </IconAction>
         </Row>
+        {choice === 'custom' && (
+          <Row
+            id="partyServer"
+            hint={
+              refused
+                ? `That address can’t be used; it has to be an https address, or one on this computer. Using ${host}.`
+                : undefined
+            }
+          >
+            <TextSetting
+              value={settings.partyServer}
+              onSave={(partyServer) => update.mutate({ partyServer })}
+              placeholder="party.example.com"
+              maxLength={200}
+              aria-label="Custom server address"
+            />
+          </Row>
+        )}
         {probe && (
           <div
             role="status"
@@ -204,9 +243,11 @@ export function PartySection() {
           >
             <span className="flex-1 text-muted">
               {probe.ok
-                ? probe.parties !== null && probe.members !== null
-                  ? `${host} answers. ${count(probe.parties, 'party', 'parties')} and ${count(probe.members, 'listener')} on it right now.`
-                  : `${host} answers.`
+                ? `${
+                    probe.parties !== null && probe.members !== null
+                      ? `${host} answers. ${count(probe.parties, 'party', 'parties')} and ${count(probe.members, 'listener')} on it right now.`
+                      : `${host} answers.`
+                  } ${probe.reactions ? 'Reactions work there.' : 'Reactions aren’t available there.'}`
                 : `${host} didn’t answer as a party server.`}
             </span>
             <span
@@ -217,6 +258,36 @@ export function PartySection() {
           </div>
         )}
       </Group>
+      {p2pAvailable && (
+        <Group
+          title="This device"
+          footer={
+            WAVEBIT_RELAY
+              ? 'Parties on this computer reach friends through wavebit’s relay when their routers won’t connect directly.'
+              : 'wavebit’s relay isn’t running yet, so hosting on this computer needs a relay address here.'
+          }
+        >
+          <SettingSwitch
+            id="partyHostHere"
+            isSelected={settings.partyHostHere}
+            onChange={(partyHostHere) => update.mutate({ partyHostHere })}
+          />
+          <SettingSwitch
+            id="partyDirect"
+            isSelected={settings.partyDirect}
+            onChange={(partyDirect) => update.mutate({ partyDirect })}
+          />
+          <Row id="partyRelay">
+            <TextSetting
+              value={settings.partyRelay}
+              onSave={(partyRelay) => update.mutate({ partyRelay })}
+              placeholder={WAVEBIT_RELAY ? 'wavebit’s relay' : '/dns4/…/p2p/…'}
+              maxLength={300}
+              aria-label="Relay address"
+            />
+          </Row>
+        </Group>
+      )}
     </>
   );
 }

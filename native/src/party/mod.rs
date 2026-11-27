@@ -17,6 +17,7 @@ mod wire;
 use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -29,13 +30,15 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tungstenite::client::IntoClientRequest;
+use tungstenite::protocol::WebSocketConfig;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{HandshakeError, Message, WebSocket};
 
 use clock::{Mono, ServerClock, wall_ms};
 use invite::{clean_code, clean_server, parse_invite};
 use wire::{
-    ACTIONS, Member, Membership, Playback, Preview, Queue, Refusal, Snapshot, clean_members,
+    ACTIONS, CONTROL_FIELDS, FEATURE_REACTIONS, Member, Membership, Playback, Preview, Queue,
+    REACTIONS, Reaction, Refusal, Snapshot, clean_members, offers_reactions,
 };
 
 const PING_EVERY: Duration = Duration::from_secs(5);
@@ -49,6 +52,25 @@ const REPORT_EVERY: Duration = Duration::from_secs(10);
 const READ_SLICE: Duration = Duration::from_millis(20);
 const NET_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_BACKOFF: Duration = Duration::from_secs(8);
+/// The largest frame or REST answer taken from a server. A whole party with a
+/// full queue is tens of kilobytes; anything near this is not a party.
+const MAX_MESSAGE: usize = 256 << 10;
+const MAX_BODY: u64 = 64 << 10;
+/// How often the app may be told the whole state. Connection and error
+/// changes go at once.
+const PUBLISH_EVERY: Duration = Duration::from_millis(50);
+/// A pong whose server time is further than this from this computer's clock
+/// is not a clock reading.
+const MAX_CLOCK_GAP_MS: i64 = 86_400_000;
+/// How far ahead of now a state may be anchored; a resume is scheduled about
+/// 350 ms ahead.
+const MAX_ANCHOR_AHEAD_MS: i64 = 30_000;
+/// A reaction older than this when it arrives is from before a reconnect.
+const REACTION_FRESH_MS: i64 = 4_000;
+/// Reactions this device sends: a burst, then a steady rate, the same as the
+/// server allows, so its limit is never what stops one.
+const REACT_BURST: f64 = 5.0;
+const REACT_PER_SECOND: f64 = 3.0;
 
 fn heartbeat_unstable(silence: Duration) -> bool {
     silence >= UNSTABLE_AFTER
@@ -72,8 +94,13 @@ pub struct PartyIdentity {
 #[napi(object)]
 pub struct PartyInvite {
     pub code: String,
-    /// Null means whichever server this device already uses.
+    /// Null for a typed code (whichever server this device uses) and for a
+    /// party on someone's computer.
     pub server: Option<String>,
+    /// A party on someone's computer: their peer id, the key, the relay.
+    pub peer: Option<String>,
+    pub key: Option<String>,
+    pub relay: Option<String>,
 }
 
 /// Reads a code or an invite link; null for anything else.
@@ -82,7 +109,61 @@ pub fn party_parse_invite(text: String) -> Option<PartyInvite> {
     parse_invite(&text).map(|i| PartyInvite {
         code: i.code,
         server: i.server,
+        peer: i.peer.as_ref().map(|p| p.peer.clone()),
+        key: i.peer.as_ref().map(|p| p.key.clone()),
+        relay: i.peer.and_then(|p| p.relay),
     })
+}
+
+/// A relay address typed in Settings, or null. Settings may name one on this
+/// computer or the local network; a link may not.
+#[napi]
+pub fn party_clean_relay(text: String) -> Option<String> {
+    invite::clean_relay_from(&text, true)
+}
+
+/// The bridge to this computer's helper for Host on this device: its origin
+/// and the secret it wants. Kept here like the party token, so it is never in
+/// anything the page is told.
+static BRIDGE: Mutex<Option<(String, String)>> = Mutex::new(None);
+
+/// Sets, or with nulls clears, the bridge every request to that origin gets
+/// its secret for.
+#[napi]
+pub fn party_set_bridge(origin: Option<String>, secret: Option<String>) {
+    let next = match (origin, secret) {
+        (Some(origin), Some(secret))
+            if origin.starts_with("http://127.0.0.1:")
+                && clean_server(&origin).as_deref() == Some(origin.as_str())
+                && (22..=64).contains(&secret.len())
+                && secret
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') =>
+        {
+            Some((origin, secret))
+        }
+        _ => None,
+    };
+    if let Ok(mut bridge) = BRIDGE.lock() {
+        *bridge = next;
+    }
+}
+
+/// The bridge's secret, for a request to exactly its origin.
+fn bridge_secret(url: &str) -> Option<String> {
+    let bridge = BRIDGE.lock().ok()?;
+    let (origin, secret) = bridge.as_ref()?;
+    let rest = url.strip_prefix(origin.as_str())?;
+    (rest.is_empty() || rest.starts_with('/')).then(|| secret.clone())
+}
+
+const BRIDGE_HEADER: &str = "X-Wavebit-Bridge";
+
+fn with_bridge<B>(request: ureq::RequestBuilder<B>, url: &str) -> ureq::RequestBuilder<B> {
+    match bridge_secret(url) {
+        Some(secret) => request.header(BRIDGE_HEADER, &secret),
+        None => request,
+    }
 }
 
 /// `https://host[:port]`, or null when the text isn't a server wavebit will talk to.
@@ -91,6 +172,8 @@ pub fn party_clean_server(text: String) -> Option<String> {
     clean_server(&text)
 }
 
+/// The server's own words are kept short and plain, but the app shows a
+/// sentence of its own for anything it doesn't know.
 #[derive(Serialize, Clone, PartialEq, Debug)]
 struct Fault {
     code: String,
@@ -127,6 +210,8 @@ struct View {
     /// A create or join is on its way.
     busy: bool,
     error: Option<Fault>,
+    /// The server this party is on said it passes reactions on.
+    reactions: bool,
 }
 
 fn idle() -> View {
@@ -145,6 +230,7 @@ fn idle() -> View {
         offset_ms: 0,
         busy: false,
         error: None,
+        reactions: false,
     }
 }
 
@@ -161,15 +247,55 @@ enum Cmd {
     },
     Leave(Option<Sender<()>>),
     Control(String),
+    React(String),
     Sync,
+}
+
+/// The reactions this device may still send: a burst, refilling steadily.
+struct ReactBudget {
+    tokens: f64,
+    at: Instant,
+}
+
+impl ReactBudget {
+    fn new() -> Self {
+        Self {
+            tokens: REACT_BURST,
+            at: Instant::now(),
+        }
+    }
+
+    fn take(&mut self, now: Instant) -> bool {
+        let elapsed = now.saturating_duration_since(self.at).as_secs_f64();
+        self.tokens = (self.tokens + elapsed * REACT_PER_SECOND).min(REACT_BURST);
+        self.at = now;
+        if self.tokens < 1.0 {
+            return false;
+        }
+        self.tokens -= 1.0;
+        true
+    }
 }
 
 fn agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .timeout_global(Some(NET_TIMEOUT))
         .http_status_as_error(false)
+        // No redirects: a server could otherwise bounce wavebit at any address
+        // on this computer or the local network.
+        .max_redirects(0)
+        .user_agent("wavebit")
         .build()
         .into()
+}
+
+fn read_body<T: DeserializeOwned>(response: &mut ureq::http::Response<ureq::Body>) -> Option<T> {
+    response
+        .body_mut()
+        .with_config()
+        .limit(MAX_BODY)
+        .read_json()
+        .ok()
 }
 
 fn fault_of(status: u16, refusal: Refusal) -> Fault {
@@ -194,16 +320,15 @@ fn post<T: DeserializeOwned>(
     body: &Value,
 ) -> std::result::Result<T, Fault> {
     let unreachable = |_| Fault::new("unreachable");
-    let mut response = agent.post(url).send_json(body).map_err(unreachable)?;
+    let mut response = with_bridge(agent.post(url), url)
+        .send_json(body)
+        .map_err(unreachable)?;
     let status = response.status().as_u16();
     if !(200..300).contains(&status) {
-        let refusal = response.body_mut().read_json().unwrap_or_default();
+        let refusal = read_body(&mut response).unwrap_or_default();
         return Err(fault_of(status, refusal));
     }
-    response
-        .body_mut()
-        .read_json()
-        .map_err(|_| Fault::new("failed"))
+    read_body(&mut response).ok_or_else(|| Fault::new("failed"))
 }
 
 fn tcp_of(socket: &Socket) -> Option<&TcpStream> {
@@ -221,6 +346,10 @@ fn open(server: &str, code: &str, token: &str) -> std::result::Result<Socket, Op
     // The header, never the address: tokens in URLs end up in access logs.
     let bearer = format!("Bearer {token}").parse().map_err(|_| None)?;
     request.headers_mut().insert("Authorization", bearer);
+    if let Some(secret) = bridge_secret(server) {
+        let value = secret.parse().map_err(|_| None)?;
+        request.headers_mut().insert(BRIDGE_HEADER, value);
+    }
     let host = request.uri().host().ok_or(None)?.to_string();
     let port = request
         .uri()
@@ -234,8 +363,11 @@ fn open(server: &str, code: &str, token: &str) -> std::result::Result<Socket, Op
     let _ = tcp.set_nodelay(true);
     let _ = tcp.set_read_timeout(Some(NET_TIMEOUT));
     let _ = tcp.set_write_timeout(Some(NET_TIMEOUT));
-    let (socket, _) =
-        tungstenite::client_tls_with_config(request, tcp, None, None).map_err(|e| match e {
+    let config = WebSocketConfig::default()
+        .max_message_size(Some(MAX_MESSAGE))
+        .max_frame_size(Some(MAX_MESSAGE));
+    let (socket, _) = tungstenite::client_tls_with_config(request, tcp, Some(config), None)
+        .map_err(|e| match e {
             HandshakeError::Failure(tungstenite::Error::Http(response)) => {
                 Some(response.status().as_u16())
             }
@@ -249,6 +381,13 @@ fn open(server: &str, code: &str, token: &str) -> std::result::Result<Socket, Op
 
 struct Worker {
     emit: Box<dyn Fn(String) + Send>,
+    /// One reaction at a time, as JSON, outside the view.
+    react: Box<dyn Fn(String) + Send>,
+    react_budget: ReactBudget,
+    last_reaction_id: i64,
+    /// When the view was last sent, and what about it can't wait.
+    sent_at: Instant,
+    sent_urgent: String,
     agent: ureq::Agent,
     mono: Mono,
     clock: ServerClock,
@@ -270,10 +409,15 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(emit: Box<dyn Fn(String) + Send>) -> Self {
+    fn new(emit: Box<dyn Fn(String) + Send>, react: Box<dyn Fn(String) + Send>) -> Self {
         let now = Instant::now();
         Self {
             emit,
+            react,
+            react_budget: ReactBudget::new(),
+            last_reaction_id: 0,
+            sent_at: now,
+            sent_urgent: String::new(),
             agent: agent(),
             mono: Mono::new(),
             clock: ServerClock::default(),
@@ -318,18 +462,42 @@ impl Worker {
                 None if Instant::now() >= self.retry_at => self.connect(),
                 None => thread::sleep(READ_SLICE),
             }
-            self.publish();
+            // Outside a party the loop waits on its commands, so nothing may
+            // be left unsent.
+            let force = self.token.is_none();
+            self.publish_now(force);
         }
     }
 
     fn publish(&mut self) {
+        self.publish_now(true);
+    }
+
+    /// Tells the app the whole state when it changed: at once when the
+    /// connection, the error or the party did, otherwise at most every
+    /// PUBLISH_EVERY, so a server sending frames as fast as it can doesn't
+    /// flood the app.
+    fn publish_now(&mut self, force: bool) {
+        let urgent = format!(
+            "{:?}|{}|{:?}|{}",
+            self.view.code, self.view.connection, self.view.error, self.view.busy
+        );
+        let now = Instant::now();
+        let due = force
+            || urgent != self.sent_urgent
+            || now.saturating_duration_since(self.sent_at) >= PUBLISH_EVERY;
+        if !due {
+            return;
+        }
         let Ok(json) = serde_json::to_string(&self.view) else {
             return;
         };
         if json != self.sent {
             (self.emit)(json.clone());
             self.sent = json;
+            self.sent_at = now;
         }
+        self.sent_urgent = urgent;
     }
 
     fn handle(&mut self, command: Cmd) {
@@ -360,6 +528,7 @@ impl Worker {
                 }
             }
             Cmd::Control(frame) => self.control(&frame),
+            Cmd::React(id) => self.send_reaction(&id),
             Cmd::Sync => {
                 // Measures the clock afresh and asks for the truth again.
                 self.burst = PING_BURST;
@@ -408,6 +577,7 @@ impl Worker {
         self.connected_at = None;
         self.last_pong_at = None;
         self.pending_pings.clear();
+        self.last_reaction_id = 0;
         self.retry_at = Instant::now();
     }
 
@@ -433,9 +603,8 @@ impl Worker {
             self.token.take(),
         );
         if let (Some(server), Some(code), Some(token)) = held {
-            let _ = self
-                .agent
-                .post(&format!("{server}/api/parties/{code}/leave"))
+            let url = format!("{server}/api/parties/{code}/leave");
+            let _ = with_bridge(self.agent.post(&url), &url)
                 .header("Authorization", &format!("Bearer {token}"))
                 .send_empty();
         }
@@ -535,19 +704,87 @@ impl Worker {
     }
 
     fn control(&mut self, frame: &str) {
-        let Ok(mut frame) = serde_json::from_str::<Value>(frame) else {
+        let Ok(Value::Object(fields)) = serde_json::from_str::<Value>(frame) else {
             return;
         };
-        let known = frame
+        let known = fields
             .get("action")
             .and_then(Value::as_str)
             .is_some_and(|action| ACTIONS.contains(&action));
-        if !known || !frame.is_object() {
+        if !known {
             return;
         }
-        frame["type"] = json!("control");
+        // Rebuilt from the fields a control may carry, so nothing else the
+        // page put in goes out.
+        let mut out = serde_json::Map::new();
+        for (key, value) in fields {
+            if CONTROL_FIELDS.contains(&key.as_str()) {
+                out.insert(key, value);
+            }
+        }
+        out.insert("type".into(), json!("control"));
         self.view.error = None;
-        self.send(frame);
+        self.send(Value::Object(out));
+    }
+
+    /// Sends a reaction, when the party's server passes them on, the socket
+    /// is welcomed and this device hasn't sent too many.
+    fn send_reaction(&mut self, id: &str) {
+        if !self.view.reactions || !self.welcomed || !REACTIONS.contains(&id) {
+            return;
+        }
+        if !self.react_budget.take(Instant::now()) {
+            return;
+        }
+        self.send(json!({ "type": "react", "reaction": id }));
+    }
+
+    /// Passes a reaction on to the app once, from someone in the party, while
+    /// it is still fresh. The name shown is the one in the member list.
+    fn on_reaction(&mut self, frame: Value) {
+        if !self.view.reactions || !self.welcomed {
+            return;
+        }
+        let Some(reaction) = serde_json::from_value::<Reaction>(frame)
+            .ok()
+            .and_then(Reaction::clean)
+        else {
+            return;
+        };
+        if reaction.id <= self.last_reaction_id {
+            return;
+        }
+        let Some(member) = self
+            .view
+            .members
+            .iter()
+            .find(|m| m.member_id == reaction.member_id)
+        else {
+            return;
+        };
+        if let Some(offset) = self.clock.offset_ms() {
+            let server_now = self.mono.now_ms() + offset;
+            if (server_now - reaction.at_ms).abs() > REACTION_FRESH_MS {
+                return;
+            }
+        }
+        self.last_reaction_id = reaction.id;
+        let mine = self
+            .view
+            .you
+            .as_ref()
+            .is_some_and(|you| you.member_id == member.member_id);
+        (self.react)(
+            json!({
+                "id": reaction.id,
+                "memberId": member.member_id,
+                "displayName": member.display_name,
+                "reaction": reaction.reaction,
+                "atMs": reaction.at_ms,
+                "mine": mine,
+            })
+            .to_string(),
+        );
     }
 
     fn pump(&mut self) {
@@ -629,6 +866,8 @@ impl Worker {
                 if let Ok(you) = serde_json::from_value::<Member>(frame["you"].take()) {
                     self.view.you = Some(you.clean());
                 }
+                // On every welcome, so it follows the server that holds the party.
+                self.view.reactions = offers_reactions(&frame["features"]);
                 self.take_snapshot(party);
                 self.welcomed = true;
                 self.maybe_live();
@@ -651,6 +890,11 @@ impl Worker {
                     return;
                 };
                 self.pending_pings.remove(index);
+                // A server time a day away from this computer's isn't a
+                // reading; taking it would put the playhead anywhere.
+                if (server.saturating_sub(received_ms)).abs() > MAX_CLOCK_GAP_MS {
+                    return;
+                }
                 self.clock.record(sent, server, received_ms);
                 self.view.clock_synced = true;
                 self.view.round_trip_ms = self.clock.round_trip_ms();
@@ -668,6 +912,14 @@ impl Worker {
                 // Older than what's applied: two people pressing at once settle instead of fighting.
                 if playback.seq < self.view.playback.seq {
                     return;
+                }
+                // Anchored far in the future, it would hold the playhead still
+                // for that long.
+                if let Some(offset) = self.clock.offset_ms() {
+                    let server_now = self.mono.now_ms() + offset;
+                    if playback.anchor_ms.saturating_sub(server_now) > MAX_ANCHOR_AHEAD_MS {
+                        return;
+                    }
                 }
                 let queue_is_stale = playback.queue_seq != self.view.queue.seq;
                 // The party has moved on, so a refusal about the last thing tried is old news.
@@ -726,6 +978,7 @@ impl Worker {
                 let kicked = frame["reason"].as_str() == Some("kicked");
                 self.end(if kicked { "kicked" } else { "ended" });
             }
+            "reaction" => self.on_reaction(frame),
             _ => {}
         }
     }
@@ -737,6 +990,8 @@ fn identity(who: &PartyIdentity) -> Value {
         "deviceId": who.device_id,
         "displayName": who.display_name,
         "avatarUrl": who.avatar_url,
+        // What this app can show; a server that doesn't know the field ignores it.
+        "features": [FEATURE_REACTIONS],
     })
 }
 
@@ -752,6 +1007,7 @@ impl Party {
     #[napi(constructor)]
     pub fn new(
         on_change: ThreadsafeFunction<String, Unknown<'static>, String, Status, false>,
+        on_reaction: ThreadsafeFunction<String, Unknown<'static>, String, Status, false>,
     ) -> Result<Self> {
         // Already installed is fine; one provider for the socket and for REST.
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -759,9 +1015,12 @@ impl Party {
         let emit = Box::new(move |json: String| {
             on_change.call(json, ThreadsafeFunctionCallMode::NonBlocking);
         });
+        let react = Box::new(move |json: String| {
+            on_reaction.call(json, ThreadsafeFunctionCallMode::NonBlocking);
+        });
         thread::Builder::new()
             .name("wavebit-party".into())
-            .spawn(move || Worker::new(emit).run(inbox))
+            .spawn(move || Worker::new(emit, react).run(inbox))
             .map_err(|e| Error::new(Status::GenericFailure, format!("party: {e}")))?;
         Ok(Self { commands })
     }
@@ -799,6 +1058,13 @@ impl Party {
     #[napi]
     pub fn control(&self, frame: String) {
         let _ = self.commands.send(Cmd::Control(frame));
+    }
+
+    /// Sends one reaction by its id. Unknown ids, a server without reactions
+    /// and too many at once are dropped.
+    #[napi]
+    pub fn react(&self, id: String) {
+        let _ = self.commands.send(Cmd::React(id));
     }
 
     /// Measures the clock again and asks the server to restate where the party is.
@@ -839,22 +1105,17 @@ impl Task for PreviewTask {
             return Ok(None);
         };
         let url = format!("{server}/api/parties/{code}/preview");
-        let Ok(mut response) = agent().get(&url).call() else {
+        let Ok(mut response) = with_bridge(agent().get(&url), &url).call() else {
             return Ok(None);
         };
         if response.status().as_u16() != 200 {
             return Ok(None);
         }
-        let Ok(preview) = response.body_mut().read_json::<Preview>() else {
+        let Some(preview) = read_body::<Preview>(&mut response) else {
             return Ok(None);
         };
         Ok(Some(PartyPreview {
-            host_name: preview
-                .host_name
-                .chars()
-                .filter(|c| !c.is_control())
-                .take(80)
-                .collect(),
+            host_name: wire::clip(&preview.host_name, 80),
             max_members: preview.max_members.clamp(0, 16) as u32,
             is_full: preview.is_full,
             members: clean_members(preview.members)
@@ -886,6 +1147,8 @@ pub struct PartyProbe {
     pub round_trip_ms: u32,
     pub parties: Option<u32>,
     pub members: Option<u32>,
+    /// It said it passes reactions on.
+    pub reactions: bool,
 }
 
 pub struct ProbeTask(String);
@@ -900,15 +1163,17 @@ impl Task for ProbeTask {
             round_trip_ms: 0,
             parties: None,
             members: None,
+            reactions: false,
         };
         let Some(server) = clean_server(&self.0) else {
             return Ok(down);
         };
         let agent = agent();
         let get = |path: &str| -> Option<Value> {
-            let mut response = agent.get(&format!("{server}{path}")).call().ok()?;
+            let url = format!("{server}{path}");
+            let mut response = with_bridge(agent.get(&url), &url).call().ok()?;
             (response.status().as_u16() == 200)
-                .then(|| response.body_mut().read_json().ok())
+                .then(|| read_body(&mut response))
                 .flatten()
         };
         // The first call pays for the TLS handshake; the second is the round trip.
@@ -923,6 +1188,7 @@ impl Task for ProbeTask {
             round_trip_ms: started.elapsed().as_millis().min(60_000) as u32,
             parties: count("parties"),
             members: count("members"),
+            reactions: offers_reactions(&root["features"]),
         })
     }
 
@@ -945,7 +1211,10 @@ mod tests {
     fn worker() -> (Worker, Arc<Mutex<Vec<String>>>) {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let sink = seen.clone();
-        let mut worker = Worker::new(Box::new(move |json| sink.lock().unwrap().push(json)));
+        let mut worker = Worker::new(
+            Box::new(move |json| sink.lock().unwrap().push(json)),
+            Box::new(|_| {}),
+        );
         worker.token = Some("secret-token".into());
         worker.view.code = Some("K7M2QX".into());
         worker.view.you = Some(Member {
@@ -1108,6 +1377,164 @@ mod tests {
         assert_eq!(sent.len(), 1);
         assert!(!sent[0].contains("secret-token"));
         assert!(sent[0].contains(r#""code":"K7M2QX""#));
+    }
+
+    fn party_with_reactions() -> (Worker, Arc<Mutex<Vec<String>>>) {
+        let reactions = Arc::new(Mutex::new(Vec::new()));
+        let sink = reactions.clone();
+        let mut w = Worker::new(
+            Box::new(|_| {}),
+            Box::new(move |json| sink.lock().unwrap().push(json)),
+        );
+        w.token = Some("secret-token".into());
+        w.view.code = Some("K7M2QX".into());
+        w.view.you = Some(Member {
+            member_id: "me".into(),
+            ..Member::default()
+        });
+        w.on_frame(
+            r#"{"type":"welcome","features":["reactions"],"you":{"memberId":"me"},
+                "party":{"members":[{"memberId":"me","displayName":"Shikki"},{"memberId":"m2","displayName":"Maya"}]}}"#,
+            0,
+        );
+        (w, reactions)
+    }
+
+    #[test]
+    fn a_reaction_reaches_the_app_once_named_from_the_member_list() {
+        let (mut w, seen) = party_with_reactions();
+        assert!(w.view.reactions);
+        let frame = r#"{"type":"reaction","id":4,"memberId":"m2","reaction":"fire","displayName":"Host","atMs":0}"#;
+        w.on_frame(frame, 0);
+        w.on_frame(frame, 0);
+        let got = seen.lock().unwrap().clone();
+        assert_eq!(got.len(), 1, "a repeated id is shown once");
+        let r: Value = serde_json::from_str(&got[0]).unwrap();
+        assert_eq!(r["displayName"], "Maya");
+        assert_eq!(r["reaction"], "fire");
+        assert_eq!(r["mine"], false);
+        assert!(!got[0].contains("secret-token"));
+    }
+
+    #[test]
+    fn reactions_from_strangers_or_unknown_ids_are_dropped() {
+        let (mut w, seen) = party_with_reactions();
+        w.on_frame(
+            r#"{"type":"reaction","id":1,"memberId":"nobody","reaction":"fire"}"#,
+            0,
+        );
+        w.on_frame(
+            r#"{"type":"reaction","id":2,"memberId":"m2","reaction":"🔥"}"#,
+            0,
+        );
+        w.on_frame(
+            r#"{"type":"reaction","id":3,"memberId":"m2","reaction":"<script>"}"#,
+            0,
+        );
+        assert!(seen.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_server_without_reactions_gets_none_either_way() {
+        let (mut w, seen) = party_with_reactions();
+        w.on_frame(
+            r#"{"type":"welcome","party":{},"you":{"memberId":"me"}}"#,
+            0,
+        );
+        assert!(!w.view.reactions);
+        w.on_frame(
+            r#"{"type":"reaction","id":9,"memberId":"m2","reaction":"fire"}"#,
+            0,
+        );
+        assert!(seen.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn this_device_sends_a_burst_then_waits() {
+        let mut budget = ReactBudget::new();
+        let now = Instant::now();
+        assert!((0..5).all(|_| budget.take(now)));
+        assert!(!budget.take(now));
+        assert!(budget.take(now + Duration::from_millis(400)));
+    }
+
+    #[test]
+    fn a_pong_from_a_day_away_is_not_a_clock() {
+        let (mut w, _) = worker();
+        let sent = w.mono.now_ms();
+        w.pending_pings.push_back((sent, Instant::now()));
+        w.on_frame(
+            &format!(
+                r#"{{"type":"pong","clientMs":{sent},"serverMs":{}}}"#,
+                sent + 2 * 86_400_000
+            ),
+            sent + 10,
+        );
+        assert!(!w.view.clock_synced);
+    }
+
+    #[test]
+    fn a_state_anchored_far_ahead_is_dropped() {
+        let (mut w, _) = worker();
+        let now = w.mono.now_ms();
+        w.clock.record(now, now, now);
+        w.on_frame(
+            &format!(
+                r#"{{"type":"state","playback":{{"seq":3,"isPlaying":true,"anchorMs":{}}}}}"#,
+                now + 3_600_000
+            ),
+            0,
+        );
+        assert_eq!(w.view.playback.seq, 0);
+        w.on_frame(
+            &format!(
+                r#"{{"type":"state","playback":{{"seq":3,"isPlaying":true,"anchorMs":{}}}}}"#,
+                now + 350
+            ),
+            0,
+        );
+        assert_eq!(w.view.playback.seq, 3);
+    }
+
+    #[test]
+    fn updates_are_gathered_but_what_matters_goes_at_once() {
+        let (mut w, seen) = worker();
+        w.publish_now(true);
+        let first = seen.lock().unwrap().len();
+        w.view.playback.position_ms = 1;
+        w.publish_now(false);
+        assert_eq!(
+            seen.lock().unwrap().len(),
+            first,
+            "a playhead change waits its turn"
+        );
+        w.view.connection = "reconnecting";
+        w.publish_now(false);
+        assert_eq!(
+            seen.lock().unwrap().len(),
+            first + 1,
+            "a connection change goes at once"
+        );
+    }
+
+    #[test]
+    fn the_bridge_secret_goes_only_to_the_bridge() {
+        party_set_bridge(
+            Some("http://127.0.0.1:43121".into()),
+            Some("s3cret-0123456789abcdefgh".into()),
+        );
+        assert!(bridge_secret("http://127.0.0.1:43121/api/parties").is_some());
+        assert!(bridge_secret("http://127.0.0.1:43121").is_some());
+        assert!(bridge_secret("http://127.0.0.1:431210/api").is_none());
+        assert!(bridge_secret("https://party.example.com/api").is_none());
+        // Only a bridge on this computer, with a sane secret, is ever set.
+        party_set_bridge(
+            Some("https://evil.example".into()),
+            Some("s3cret-0123456789abcdefgh".into()),
+        );
+        assert!(bridge_secret("https://evil.example/x").is_none());
+        party_set_bridge(None, None);
+        assert!(bridge_secret("http://127.0.0.1:43121/api").is_none());
     }
 
     #[test]

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DEFAULT_LYRICS_ORDER } from '../lyricsSources.ts';
+import { PartyServerChoiceSchema } from './party.ts';
 
 export const ThemeSchema = z.enum([
   'system',
@@ -180,8 +181,18 @@ export const SettingsSchema = z
     partyShowPing: z.boolean(),
     /** A short notice when someone joins or leaves. */
     partyNotices: z.boolean(),
-    /** Empty is BitChord's server. Read through the Rust module, which only accepts an https origin. */
+    /** wavebit's server, BitChord's, or the address in `partyServer`. */
+    partyServerChoice: PartyServerChoiceSchema,
+    /** The custom server. Read through the Rust module, which only accepts an https origin. */
     partyServer: z.string().max(200),
+    /** Other people's reactions float up; yours always show. */
+    partyShowReactions: z.boolean(),
+    /** Parties started here run on this computer instead of a server. */
+    partyHostHere: z.boolean(),
+    /** Connections that don't go through the relay, which show your address to the party. */
+    partyDirect: z.boolean(),
+    /** The relay for Host on this device; empty is wavebit's. Checked by the Rust module. */
+    partyRelay: z.string().max(300),
     /** Spotify playlists added from a link. Only the main process writes these. */
     importedPlaylists: z.array(ImportedPlaylistSchema).max(200),
   })
@@ -293,6 +304,11 @@ export const DEFAULT_SETTINGS: Settings = {
   partyShareAvatar: true,
   partyShowPing: true,
   partyNotices: true,
+  partyServerChoice: 'wavebit',
   partyServer: '',
+  partyShowReactions: true,
+  partyHostHere: false,
+  partyDirect: true,
+  partyRelay: '',
   importedPlaylists: [],
 };

@@ -33,6 +33,7 @@ import { bannerFor } from './banners';
 import { AvatarStack, inOrder, MemberAvatar, useLink } from './PartyBits';
 import { controlsLocked, faultMessage, inviteLink } from './partyRules';
 import { resyncParty } from './partySync';
+import { ReactionBar, ReactionLayer } from './Reactions';
 import { useParty } from './store';
 
 const api = () => window.wavebit.party;
@@ -174,9 +175,12 @@ function Top() {
 function Banner({
   code,
   children,
+  overlay,
 }: {
   code: string | null;
   children: (tone: string) => ReactNode;
+  /** Drawn over everything, without taking clicks: the reactions. */
+  overlay?: ReactNode;
 }) {
   const wanted = useSettings().data?.partyBanner ?? true;
   const art = wanted ? bannerFor(code) : null;
@@ -198,6 +202,7 @@ function Banner({
       <div className="relative flex flex-1 flex-col gap-1 pt-3 pr-2 pb-2 pl-4">
         {children(art ? 'text-white!' : '')}
       </div>
+      {overlay}
     </section>
   );
 }
@@ -318,6 +323,10 @@ function You({ line = 'Your name in parties' }: { line?: string }) {
 function StartOrJoin() {
   const busy = useParty((s) => s.busy);
   const named = useParty((s) => !!s.me);
+  const p2p = useParty((s) => s.p2pAvailable);
+  const settings = useSettings().data;
+  const update = useUpdateSettings();
+  const hostHere = p2p && (settings?.partyHostHere ?? false);
   const autoplay = usePlayer((s) => s.autoplay);
   const [text, setText] = useState('');
   const join = () => text.trim() && void api().join(text.trim());
@@ -341,7 +350,9 @@ function StartOrJoin() {
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="text-sm font-medium">Start a party</span>
               <span className="text-[0.8667rem] text-muted">
-                What you’re playing comes with you.
+                {hostHere
+                  ? 'On this computer. It ends when you quit wavebit.'
+                  : 'What you’re playing comes with you.'}
               </span>
             </span>
             <IconAction
@@ -359,6 +370,17 @@ function StartOrJoin() {
               />
             </IconAction>
           </div>
+          {p2p && settings && (
+            <div className="-ml-4 -mr-2">
+              <SwitchRow
+                flush
+                label="Host on this device"
+                description="No server. Friends connect to this computer."
+                isSelected={settings.partyHostHere}
+                onChange={(partyHostHere) => update.mutate({ partyHostHere })}
+              />
+            </div>
+          )}
         </Card>
         <Card title="Join a party">
           <form
@@ -427,7 +449,9 @@ function Invite({ invite }: { invite: PartyInvite }) {
             <p className="pr-2 text-sm opacity-85 tabular-nums">
               {preview
                 ? `Invite · ${preview.hostName ? `${preview.hostName}’s party` : 'a party'} · ${people.length} of ${preview.maxMembers} listening`
-                : `Invite on ${invite.host}`}
+                : invite.kind === 'p2p'
+                  ? 'Invite · a party on someone’s computer'
+                  : `Invite on ${invite.host}`}
             </p>
             <div className="mt-auto flex items-center">
               <span className="flex-1">
@@ -449,7 +473,9 @@ function Invite({ invite }: { invite: PartyInvite }) {
                 size={36}
                 className={tone}
                 isDisabled={!named || preview?.isFull}
-                onPress={() => void api().acceptInvite()}
+                onPress={() =>
+                  void api().acceptInvite(invite.code, invite.host)
+                }
               >
                 <Check size={22} aria-hidden />
               </IconAction>
@@ -466,13 +492,30 @@ function Invite({ invite }: { invite: PartyInvite }) {
           <p className="shrink-0 rounded-md bg-foreground/5 px-4 py-3 text-sm text-muted">
             Joining shows {who} your name and picture, and starts their music
             here.
+            {invite.kind === 'p2p' &&
+              ' Nothing is sent to that computer until you press Join. A direct connection also shows the host your address on the internet.'}
+          </p>
+        )}
+        {invite.kind === 'p2p' && (
+          <Safety
+            number={invite.safety ?? ''}
+            hint="The same on the host’s screen."
+          />
+        )}
+        {invite.otherRelay && (
+          <p className="shrink-0 rounded-md bg-warning-soft px-4 py-3 text-sm break-words">
+            This invite uses a relay at{' '}
+            <span className="font-semibold">
+              {invite.otherRelay.split('/')[2]}
+            </span>
+            , not wavebit’s.
           </p>
         )}
         {invite.otherServer && (
           <p className="shrink-0 rounded-md bg-warning-soft px-4 py-3 text-sm">
             This invite is on{' '}
             <span className="font-semibold">{invite.host}</span>, not the server
-            you use.
+            you use. Nothing is sent there until you press Join.
           </p>
         )}
         <You line="You join as" />
@@ -520,9 +563,26 @@ function NextInParty() {
   );
 }
 
+/** The safety number two people read out to check they reached each other. */
+function Safety({ number, hint }: { number: string; hint: string }) {
+  return (
+    <section className="flex shrink-0 items-center gap-3 rounded-md bg-foreground/5 py-3 pr-4 pl-4">
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="text-sm font-medium">Safety number</span>
+        <span className="text-[0.8667rem] text-muted">{hint}</span>
+      </span>
+      <span className="font-mono text-sm font-semibold tracking-[0.08em] select-text">
+        {number}
+      </span>
+    </section>
+  );
+}
+
 function InParty({ code }: { code: string }) {
   const link = useLink();
   const server = useParty((s) => s.server);
+  const p2p = useParty((s) => s.p2p);
+  const shared = useParty((s) => s.inviteLink);
   const members = useParty((s) => s.members);
   const max = useParty((s) => s.maxMembers);
   const you = useParty((s) => s.you);
@@ -534,13 +594,20 @@ function InParty({ code }: { code: string }) {
   const leave = () => void api().leave();
   const resize = (maxMembers: number) =>
     void api().control({ action: 'setMaxMembers', maxMembers });
-  const status =
-    link.text.endsWith('ms') && !link.warn
+  const status = p2p
+    ? `${p2p.hosting ? 'On this computer' : 'On the host’s computer'}${
+        p2p.hosting
+          ? ` · ${p2p.direct} direct, ${p2p.relayed} relayed`
+          : p2p.direct > 0
+            ? ' · direct'
+            : ' · relayed'
+      }`
+    : link.text.endsWith('ms') && !link.warn
       ? `In sync · ${link.text}`
       : link.text;
   return (
     <>
-      <Banner code={code}>
+      <Banner code={code} overlay={<ReactionLayer />}>
         {(tone) => (
           <>
             <Code>{code}</Code>
@@ -555,12 +622,14 @@ function InParty({ code }: { code: string }) {
                   gap={tone ? 'ring-black/40' : 'ring-accent-soft'}
                 />
               </span>
-              <CopyAction label="Copy code" text={code} tone={tone}>
-                <Copy size={18} aria-hidden />
-              </CopyAction>
+              {!p2p && (
+                <CopyAction label="Copy code" text={code} tone={tone}>
+                  <Copy size={18} aria-hidden />
+                </CopyAction>
+              )}
               <CopyAction
                 label="Copy invite link"
-                text={inviteLink(code, server, INVITE_PAGE)}
+                text={shared ?? inviteLink(code, server, INVITE_PAGE)}
                 tone={tone}
               >
                 <Link size={18} aria-hidden />
@@ -586,6 +655,24 @@ function InParty({ code }: { code: string }) {
         )}
       </Banner>
       <div className="flex flex-col gap-3 px-4">
+        <ReactionBar />
+        {p2p?.hosting && (
+          <p className="shrink-0 rounded-md bg-foreground/5 px-4 py-3 text-[0.8667rem] text-muted">
+            A party on this computer has no code to type. Share the link: it
+            carries this computer’s key. Ending the party, or quitting wavebit,
+            ends it for everyone.
+          </p>
+        )}
+        {p2p && (
+          <Safety
+            number={p2p.safety}
+            hint={
+              p2p.hosting
+                ? 'Read it out to check it’s really you.'
+                : 'The same on the host’s screen.'
+            }
+          />
+        )}
         {locked && (
           <section className="flex shrink-0 items-center gap-2 rounded-md bg-warning-soft py-2 pr-2 pl-4 text-sm">
             <p className="flex-1 py-1">

@@ -10,7 +10,8 @@ import {
 } from '../../lib/queries';
 import { currentUi, setUi } from '../../app/ui';
 import { configurePartySync, startPartySync } from './partySync';
-import { faultMessage } from './partyRules';
+import { faultMessage, noticeBudget } from './partyRules';
+import { connectReactions } from './reactionStore';
 import { connectParty, partyNow, watchParty } from './store';
 
 /** Only a picture everyone can load goes to the party. */
@@ -46,7 +47,7 @@ function notices(
  */
 export function usePartyBridge(): void {
   useEffect(() => {
-    const stops = [connectParty(), startPartySync()];
+    const stops = [connectParty(), startPartySync(), connectReactions()];
     return () => stops.forEach((stop) => stop());
   }, []);
 
@@ -80,6 +81,7 @@ export function usePartyBridge(): void {
   const wanted = settings?.partyNotices ?? true;
   useEffect(() => {
     let before = partyNow();
+    let shownAt: number[] = [];
     return watchParty(() => {
       const now = partyNow();
       const was = before;
@@ -91,8 +93,12 @@ export function usePartyBridge(): void {
         toast(faultMessage(now.error));
       if (!wanted || !was.code || was.code !== now.code) return;
       if (was.members === now.members) return;
-      for (const line of notices(was.members, now.members, now.you?.memberId))
-        toast(line);
+      const lines = notices(was.members, now.members, now.you?.memberId);
+      if (lines.length === 0) return;
+      const budget = noticeBudget(shownAt, Date.now(), lines);
+      shownAt = budget.recent;
+      for (const line of budget.show) toast(line);
+      if (budget.summary) toast(budget.summary);
     });
   }, [wanted]);
 }

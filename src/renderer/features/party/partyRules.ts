@@ -4,7 +4,7 @@ import type {
   PartyPlayback,
   PartyQueue,
 } from '../../../shared/schemas/party';
-import { DEFAULT_PARTY_SERVER } from '../../../shared/schemas/party.ts';
+import { BITCHORD_PARTY_SERVER } from '../../../shared/schemas/party.ts';
 
 /**
  * Listen together's rules, apart from the player and the window so they can
@@ -217,7 +217,9 @@ export function linkStatus(
 /**
  * The link to share. With an invite page published (`page`, ending in
  * `/invite/`) it is an https link, which chat apps make pressable, and the
- * page opens wavebit; without one it is wavebit's own link.
+ * page opens wavebit; without one it is wavebit's own link. It names its
+ * server, except BitChord's: a link that names none means BitChord's, which
+ * is what BitChord's apps and older wavebit links read it as.
  */
 export function inviteLink(
   code: string,
@@ -225,7 +227,7 @@ export function inviteLink(
   page: string | null = null,
 ): string {
   const other =
-    server && server !== DEFAULT_PARTY_SERVER
+    server && server !== BITCHORD_PARTY_SERVER
       ? `?server=${encodeURIComponent(server)}`
       : '';
   return page ? `${page}${other}#${code}` : `wavebit://party/${code}${other}`;
@@ -255,9 +257,88 @@ const FAULTS: Record<string, string> = {
     'The host removed you from this party. You can join it again tomorrow.',
   failed: 'The party server sent an answer wavebit can’t read.',
   off: 'Listen together is off. Turn it on in Settings.',
+  invite_changed: 'The invite changed. Check it before joining.',
+  rejoin_too_fast: 'Wait a moment, then join again.',
+  already_connected:
+    'This device is still in that party from before. Try again in half a minute.',
+  too_many_parties:
+    'This network already has several parties running. End one first.',
+  server_full: 'The party server is busy. Try again in a few minutes.',
+  validation_error: 'The party server didn’t accept your name or picture.',
+  no_relay:
+    'Hosting on this computer needs a relay. Add its address in Settings › Listen together.',
+  relay_unreachable:
+    'Couldn’t reach the relay. Check your connection, or the relay address in Settings.',
+  bad_relay: 'That relay address can’t be used.',
+  host_unreachable:
+    'Can’t reach the host’s computer. It may be asleep, or the party ended.',
+  helper_missing:
+    'This build of wavebit can’t host or join parties on a computer.',
+  p2p_stopped: 'The connection to the party’s computer stopped.',
+  p2p_failed: 'Couldn’t start the connection for a party on a computer.',
 };
 
-/** wavebit's words for a fault it knows; the server's own for one it doesn't. */
+/**
+ * wavebit's words for a fault it knows, and one plain sentence for any
+ * other. The server's own wording is never shown: a server is anyone's, and
+ * its text would read as wavebit's.
+ */
 export const faultMessage = (fault: PartyFault): string =>
-  FAULTS[fault.code] ??
-  (fault.message || 'Something went wrong with the party.');
+  FAULTS[fault.code] ?? 'The party server refused that.';
+
+/** Join and leave notices: at most this many in NOTICE_WINDOW_MS. */
+const NOTICE_LIMIT = 3;
+const NOTICE_WINDOW_MS = 10_000;
+
+/**
+ * Which of `lines` to show now, given when the last notices went up. The rest
+ * become one line, so someone joining and leaving over and over can't fill
+ * the window with notices.
+ */
+export function noticeBudget(
+  shownAt: readonly number[],
+  now: number,
+  lines: readonly string[],
+): { show: string[]; recent: number[]; summary: string | null } {
+  const recent = shownAt.filter((t) => now - t < NOTICE_WINDOW_MS);
+  const room = Math.max(0, NOTICE_LIMIT - recent.length);
+  const show = lines.slice(0, room);
+  const rest = lines.length - show.length;
+  return {
+    show,
+    recent: [...recent, ...show.map(() => now)],
+    summary:
+      rest > 0
+        ? `${rest} more ${rest === 1 ? 'change' : 'changes'} in who’s listening`
+        : null,
+  };
+}
+
+/** More song changes from others than this in SONG_FLOOD_WINDOW_MS is a flood. */
+const SONG_FLOOD_LIMIT = 5;
+const SONG_FLOOD_WINDOW_MS = 10_000;
+/** How long following stops when songs change too fast. */
+export const SONG_FLOOD_PAUSE_MS = 10_000;
+
+/**
+ * Song changes someone else made, and whether they came too fast to follow:
+ * each one makes this device load a new stream, so a member changing songs as
+ * fast as the server allows would keep every player in the party busy.
+ */
+export function songFlood(
+  changes: readonly number[],
+  now: number,
+): { changes: number[]; flooded: boolean } {
+  const recent = [
+    ...changes.filter((t) => now - t < SONG_FLOOD_WINDOW_MS),
+    now,
+  ];
+  return { changes: recent, flooded: recent.length > SONG_FLOOD_LIMIT };
+}
+
+/**
+ * The longest a timer waits for a scheduled start before looking again. The
+ * party's place comes from a server, and a start far ahead would otherwise
+ * overflow the timer and fire at once, over and over.
+ */
+export const MAX_START_WAIT_MS = 10_000;

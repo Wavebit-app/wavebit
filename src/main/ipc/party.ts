@@ -1,10 +1,12 @@
 import { z } from 'zod';
 import { Channels } from '../../shared/ipc/channels';
 import {
+  PartyAcceptSchema,
   PartyControlSchema,
   PartyCreateSchema,
   PartyJoinSchema,
   PartyMeSchema,
+  PartyReactSchema,
 } from '../../shared/schemas/party';
 import {
   acceptInvite,
@@ -15,6 +17,7 @@ import {
   leaveParty,
   partyState,
   probeParty,
+  reactParty,
   resyncParty,
   setPartyMe,
 } from '../party/party';
@@ -33,8 +36,13 @@ export function registerPartyIpc(): void {
   handle(Channels.partyControl, PartyControlSchema, (control) =>
     controlParty(control),
   );
-  handle(Channels.partyAcceptInvite, NoInput, () => acceptInvite());
+  handle(Channels.partyAcceptInvite, PartyAcceptSchema, (shown) =>
+    acceptInvite(shown),
+  );
   handle(Channels.partyDeclineInvite, NoInput, () => declineInvite());
   handle(Channels.partyProbe, NoInput, () => probeParty());
   handle(Channels.partyResync, NoInput, () => resyncParty());
+  handle(Channels.partyReact, PartyReactSchema, ({ reaction }) =>
+    reactParty(reaction),
+  );
 }

@@ -110,6 +110,7 @@ export const Channels = {
   partyDeclineInvite: 'party:declineInvite',
   partyProbe: 'party:probe',
   partyResync: 'party:resync',
+  partyReact: 'party:react',
   discordStatus: 'discord:status',
   discordPublish: 'discord:publish',
   discordRetry: 'discord:retry',
@@ -131,6 +132,7 @@ export const Events = {
   leftFullScreen: 'app:leftFullScreen',
   partyChanged: 'party:changed',
   partyOpen: 'party:open',
+  partyReaction: 'party:reaction',
   discordStatus: 'discord:statusChanged',
 } as const;
 

@@ -2,10 +2,12 @@ import { Button, Tooltip } from '@heroui/react';
 import { Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { PartyMember } from '../../../shared/schemas/party';
+import { useUi } from '../../app/ui';
 import { IconAction } from '../../design/IconAction';
 import { useSettings } from '../../lib/queries';
 import { BREAKPOINTS, useWindowWidth } from '../../lib/useBreakpoint';
 import { inOrder, MemberAvatar, useLink, usePartyEnabled } from './PartyBits';
+import { ReactionBadge } from './Reactions';
 import { openPartyDrawer, useParty } from './store';
 
 /** As large as the account circles beside it. */
@@ -71,7 +73,16 @@ function Ping() {
   );
 }
 
-function Listener({ member, you }: { member: PartyMember; you: boolean }) {
+function Listener({
+  member,
+  you,
+  badge,
+}: {
+  member: PartyMember;
+  you: boolean;
+  /** Show their reactions on the picture: the drawer is closed. */
+  badge: boolean;
+}) {
   const role = member.isHost ? 'Host' : 'Listening';
   const line = member.connected ? role : 'Reconnecting';
   return (
@@ -86,6 +97,7 @@ function Listener({ member, you }: { member: PartyMember; you: boolean }) {
           className={`icon-sized relative rounded-full bg-canvas p-0 ring-2 ring-canvas transition-transform hover:z-10 hover:scale-110 focus-visible:z-10 ${member.isHost ? 'z-10 mr-1' : ''}`}
         >
           <MemberAvatar member={member} size={AVATAR} />
+          {badge && <ReactionBadge memberIds={[member.memberId]} />}
         </Button>
       </Tooltip.Trigger>
       <Tooltip.Content placement="bottom end" offset={10} className="p-3">
@@ -116,6 +128,8 @@ export function PartyStatus() {
   const showPing = useSettings().data?.partyShowPing ?? true;
   const narrow = useWindowWidth() < BREAKPOINTS.expanded;
   const enabled = usePartyEnabled();
+  // In the drawer they float over the banner instead.
+  const badges = useUi((u) => u.panel) !== 'party';
   if (!enabled) return null;
   // The player bar is hidden until a song has played, so this is the way in.
   if (!code)
@@ -134,7 +148,12 @@ export function PartyStatus() {
       {showPing && <Ping />}
       <div className="isolate flex items-center -space-x-2">
         {shown.map((m) => (
-          <Listener key={m.memberId} member={m} you={m.memberId === me} />
+          <Listener
+            key={m.memberId}
+            member={m}
+            you={m.memberId === me}
+            badge={badges}
+          />
         ))}
         {more > 0 && (
           <Button
@@ -142,9 +161,14 @@ export function PartyStatus() {
             aria-label={`${more} more listening`}
             onPress={openPartyDrawer}
             style={{ width: AVATAR, height: AVATAR, minWidth: AVATAR }}
-            className="rounded-full bg-surface p-0 text-xs font-semibold text-muted ring-2 ring-canvas"
+            className="relative rounded-full bg-surface p-0 text-xs font-semibold text-muted ring-2 ring-canvas"
           >
             +{more}
+            {badges && (
+              <ReactionBadge
+                memberIds={ordered.slice(shown.length).map((m) => m.memberId)}
+              />
+            )}
           </Button>
         )}
       </div>

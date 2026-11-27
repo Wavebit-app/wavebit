@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import { Events } from '../../../shared/ipc/channels';
 import {
-  DEFAULT_PARTY_SERVER,
+  BITCHORD_PARTY_SERVER,
+  WAVEBIT_PARTY_SERVER,
   IDLE_PARTY,
   type PartyState,
 } from '../../../shared/schemas/party';
@@ -12,7 +13,13 @@ let state: PartyState = {
   ...IDLE_PARTY,
   me: null,
   invite: null,
-  serverHost: DEFAULT_PARTY_SERVER.replace('https://', ''),
+  p2pAvailable: false,
+  p2p: null,
+  inviteLink: null,
+  serverHost: (WAVEBIT_PARTY_SERVER ?? BITCHORD_PARTY_SERVER).replace(
+    'https://',
+    '',
+  ),
 };
 const listeners = new Set<() => void>();
 
