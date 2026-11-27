@@ -264,7 +264,7 @@ export function PartySection() {
           footer={
             WAVEBIT_RELAY
               ? 'Parties on this computer reach friends through wavebit’s relay when their routers won’t connect directly.'
-              : 'wavebit’s relay isn’t running yet, so hosting on this computer needs a relay address here.'
+              : 'Friends on your network join straight away. Friends elsewhere join when your router opens a port for wavebit (UPnP), or through a relay you add here.'
           }
         >
           <SettingSwitch
@@ -281,7 +281,9 @@ export function PartySection() {
             <TextSetting
               value={settings.partyRelay}
               onSave={(partyRelay) => update.mutate({ partyRelay })}
-              placeholder={WAVEBIT_RELAY ? 'wavebit’s relay' : '/dns4/…/p2p/…'}
+              placeholder={
+                WAVEBIT_RELAY ? 'wavebit’s relay' : 'Optional · /dns4/…/p2p/…'
+              }
               maxLength={300}
               aria-label="Relay address"
             />

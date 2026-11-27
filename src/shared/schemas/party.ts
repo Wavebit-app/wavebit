@@ -18,7 +18,8 @@ export const WAVEBIT_PARTY_SERVER: string | null = null;
 /**
  * wavebit's relay for Host on this device (`server/cmd/wavebit-relay`), a
  * multiaddr ending in `/p2p/<id>`, or null until it is deployed. While it is
- * null, hosting on this device needs a relay address in Settings.
+ * null, a party hosted on this device is reached at the computer's own
+ * addresses: the same network, or a port the router opened (UPnP).
  */
 export const WAVEBIT_RELAY: string | null = null;
 
@@ -190,6 +191,12 @@ export interface PartyP2p {
   /** Others connected straight to this computer, and through the relay. */
   direct: number;
   relayed: number;
+  /**
+   * For the host: who can reach this computer. `anyone` through a relay or a
+   * port the router opened, `network` people on the same network only,
+   * `none` nobody yet. Null for a guest.
+   */
+  reach: 'anyone' | 'network' | 'none' | null;
 }
 
 export const IDLE_PARTY: PartySession = {

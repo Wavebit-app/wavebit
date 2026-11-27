@@ -11,6 +11,7 @@ import {
   useSearch,
   useSignedIn,
   useYtSearch,
+  useYtVideo,
 } from '../../lib/queries';
 import {
   localAlbumMenu,
@@ -21,8 +22,16 @@ import {
 } from '../menus/menus';
 import { fromLocal, player } from '../player/player';
 import { open as openYt, streamOf } from '../youtube/YouTube';
-import { SpotifyMark } from '../../design/BrandMarks';
-import { parseSpotifyLink } from '../../../shared/spotifyLink';
+import { SpotifyMark, YouTubeMusicMark } from '../../design/BrandMarks';
+import {
+  isSpotifyShortLink,
+  parseSpotifyLink,
+} from '../../../shared/spotifyLink';
+import {
+  parseYouTubeLink,
+  playlistBrowseId,
+} from '../../../shared/youtubeLink';
+import type { Playable } from '../player/player';
 import { spotifyRoute } from '../spotify/rowLinks';
 import { fitResults } from './budget';
 import { recentSearches, useRecentSearches } from './recentSearches';
@@ -34,8 +43,8 @@ interface Result {
   meta: string;
   art: string | null;
   open: () => void;
-  /** Drawn instead of the artwork. */
-  mark?: boolean;
+  /** The service's mark, drawn instead of the artwork. */
+  mark?: 'spotify' | 'youtube';
   /** A person: the picture is a circle. */
   round?: boolean;
   /** What a right-click on the row offers. */
@@ -48,6 +57,36 @@ const LINK_TITLES = {
   artist: 'Open this Spotify artist',
   track: 'Open this Spotify song',
 };
+
+const YT_TITLES = {
+  playlist: 'Open this YouTube playlist',
+  album: 'Open this YouTube Music album',
+  artist: 'Open this YouTube Music artist',
+};
+
+/**
+ * What a pasted link points at, read here with nothing fetched: a Spotify
+ * link or URI, a YouTube or YouTube Music link, or a Spotify short link
+ * (whose target only Spotify knows).
+ */
+type PastedLink =
+  | {
+      service: 'spotify';
+      link: NonNullable<ReturnType<typeof parseSpotifyLink>>;
+    }
+  | {
+      service: 'youtube';
+      link: NonNullable<ReturnType<typeof parseYouTubeLink>>;
+    }
+  | { service: 'short' };
+
+function readLink(text: string): PastedLink | null {
+  const spotify = parseSpotifyLink(text);
+  if (spotify) return { service: 'spotify', link: spotify };
+  const youtube = parseYouTubeLink(text);
+  if (youtube) return { service: 'youtube', link: youtube };
+  return isSpotifyShortLink(text) ? { service: 'short' } : null;
+}
 
 /** Recent searches shown at first, and how many Show more adds (the sidebar's paging). */
 const RECENT_PAGE = 5;
@@ -87,7 +126,12 @@ export function SearchBox({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
   const recentShown = recent.slice(0, shown);
   const showRecent = open && !query.trim() && recent.length > 0;
 
-  const link = useMemo(() => parseSpotifyLink(deferred), [deferred]);
+  const link = useMemo(() => readLink(deferred), [deferred]);
+  const linkedVideo =
+    link?.service === 'youtube' && link.link.kind === 'video'
+      ? link.link
+      : null;
+  const video = useYtVideo(linkedVideo?.videoId ?? null);
 
   // YouTube Music is asked once typing pauses, not on every key.
   const [settled, setSettled] = useState('');
@@ -105,21 +149,7 @@ export function SearchBox({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
     (settled !== deferred || remote.isFetching);
 
   const items = useMemo<Result[]>(() => {
-    if (link)
-      return [
-        {
-          key: 'link',
-          group: 'Spotify link',
-          title: LINK_TITLES[link.kind],
-          meta:
-            link.kind === 'playlist'
-              ? 'Add it to your playlists from its page'
-              : 'Opens here in wavebit',
-          art: null,
-          mark: true,
-          open: () => nav.go(spotifyRoute(link)),
-        },
-      ];
+    if (link) return linkResults(link, signedIn, video.data, video.isPending);
     if (!deferred || !results.data) return [];
     const lower = deferred.toLowerCase();
     const r = results.data;
@@ -213,6 +243,9 @@ export function SearchBox({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
   }, [
     deferred,
     link,
+    signedIn,
+    video.data,
+    video.isPending,
     results.data,
     playlists.data,
     remote.data,
@@ -429,9 +462,13 @@ export function SearchBox({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
                   onClick={() => choose(item)}
                   className={`flex h-14 w-full items-center gap-3 rounded-[4px] px-2 text-left ${i === active ? 'bg-sunken' : ''}`}
                 >
-                  {item.mark ? (
+                  {item.mark && !item.art ? (
                     <span className="flex size-10 shrink-0 items-center justify-center rounded-[4px] bg-sunken">
-                      <SpotifyMark size={20} />
+                      {item.mark === 'youtube' ? (
+                        <YouTubeMusicMark size={20} />
+                      ) : (
+                        <SpotifyMark size={20} />
+                      )}
                     </span>
                   ) : (
                     <Artwork
@@ -461,4 +498,165 @@ export function SearchBox({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
         )}
     </div>
   );
+}
+
+/** A YouTube song or video as the player takes it. */
+function linkedSong(
+  videoId: string,
+  found:
+    | {
+        title: string;
+        artists: string;
+        imageUrl: string | null;
+        durationMs: number;
+        isVideo: boolean;
+      }
+    | null
+    | undefined,
+): Playable {
+  return {
+    id: `youtube:${videoId}`,
+    title: found?.title ?? 'YouTube video',
+    artist: found?.artists ?? '',
+    album: '',
+    albumKey: null,
+    artwork: found?.imageUrl ?? null,
+    durationMs: found?.durationMs ?? 0,
+    stream: { videoId, isVideo: found?.isVideo ?? true },
+  };
+}
+
+/** The rows a pasted link offers: what it points at, opened or played here. */
+function linkResults(
+  pasted: PastedLink,
+  signedIn: boolean,
+  found: Parameters<typeof linkedSong>[1],
+  finding: boolean,
+): Result[] {
+  if (pasted.service === 'short')
+    return [
+      {
+        key: 'link',
+        group: 'Spotify link',
+        title: 'Short Spotify links can’t be read here',
+        meta: 'Open it in your browser, then paste the open.spotify.com address',
+        art: null,
+        mark: 'spotify',
+        open: () => {},
+      },
+    ];
+  if (pasted.service === 'spotify') {
+    const link = pasted.link;
+    return [
+      signedIn
+        ? {
+            key: 'link',
+            group: 'Spotify link',
+            title: LINK_TITLES[link.kind],
+            meta:
+              link.kind === 'playlist'
+                ? 'Add it to your playlists from its page'
+                : 'Opens here in wavebit',
+            art: null,
+            mark: 'spotify',
+            open: () => nav.go(spotifyRoute(link)),
+          }
+        : {
+            key: 'link',
+            group: 'Spotify link',
+            title: 'Connect Spotify to open this link',
+            meta: 'Settings › Spotify',
+            art: null,
+            mark: 'spotify',
+            open: () => nav.go({ name: 'settings', section: 'spotify' }),
+          },
+    ];
+  }
+  const link = pasted.link;
+  switch (link.kind) {
+    case 'video': {
+      const song = linkedSong(link.videoId, found);
+      const rows: Result[] = [
+        {
+          key: 'link',
+          group: 'YouTube link',
+          title: found
+            ? found.title
+            : finding
+              ? 'Finding it on YouTube Music'
+              : 'Play this YouTube video',
+          meta: found
+            ? `${found.artists ? `${found.artists} · ` : ''}Plays here in wavebit`
+            : 'Plays here in wavebit',
+          art: found?.imageUrl ?? null,
+          mark: 'youtube',
+          menu: () => songMenu(song),
+          open: () => player.playList([song], 0, 'YouTube link'),
+        },
+      ];
+      if (link.list)
+        rows.push({
+          key: 'link-list',
+          group: 'YouTube link',
+          title: YT_TITLES.playlist,
+          meta: 'The playlist this video was shared from',
+          art: null,
+          mark: 'youtube',
+          open: () =>
+            nav.go({ name: 'ytPage', id: playlistBrowseId(link.list!) }),
+        });
+      return rows;
+    }
+    case 'playlist':
+      return [
+        {
+          key: 'link',
+          group: 'YouTube link',
+          title: YT_TITLES.playlist,
+          meta: 'Opens here in wavebit',
+          art: null,
+          mark: 'youtube',
+          open: () =>
+            nav.go({ name: 'ytPage', id: playlistBrowseId(link.list) }),
+        },
+      ];
+    case 'album':
+      return [
+        {
+          key: 'link',
+          group: 'YouTube link',
+          title: YT_TITLES.album,
+          meta: 'Opens here in wavebit',
+          art: null,
+          mark: 'youtube',
+          open: () => nav.go({ name: 'ytPage', id: link.browseId }),
+        },
+      ];
+    case 'artist':
+      return [
+        {
+          key: 'link',
+          group: 'YouTube link',
+          title: YT_TITLES.artist,
+          meta: 'Opens here in wavebit',
+          art: null,
+          mark: 'youtube',
+          open: () => nav.go({ name: 'ytArtist', id: link.browseId }),
+        },
+      ];
+    case 'handle': {
+      const name = link.handle.slice(1);
+      return [
+        {
+          key: 'link',
+          group: 'YouTube link',
+          title: `Search for “${name}”`,
+          meta: 'YouTube channels by name are found by searching',
+          art: null,
+          mark: 'youtube',
+          open: () => nav.go({ name: 'search', query: name }),
+        },
+      ];
+    }
+  }
 }

@@ -84,13 +84,18 @@ pub fn clean_link_server(raw: &str) -> Option<String> {
 }
 
 /// A party on someone's computer: who to reach, the key their helper wants,
-/// and the relay to reach them through when it isn't wavebit's.
+/// the relay to reach them through when it isn't wavebit's, and the
+/// addresses the host's computer can be reached at directly.
 #[derive(Debug, PartialEq)]
 pub struct Peer {
     pub peer: String,
     pub key: String,
     pub relay: Option<String>,
+    pub addrs: Vec<String>,
 }
+
+/// At most this many addresses for a host's computer in one link.
+pub const MAX_HOST_ADDRS: usize = 6;
 
 #[derive(Debug, PartialEq)]
 pub struct Invite {
@@ -175,7 +180,74 @@ pub fn clean_relay_from(raw: &str, local: bool) -> Option<String> {
     ok.then(|| raw.to_string())
 }
 
-/// A link to a party on someone's computer: `?peer=…&key=…[&relay=…]`.
+/// One address a host's computer listens on, as its helper writes them:
+/// `/ip4/<ip>/tcp/<port>` or `/ip4/<ip>/udp/<port>/quic-v1` (or ip6). The
+/// peer id isn't part of it: the link's `peer` is, and libp2p checks it, so
+/// an address that belongs to someone else fails the handshake.
+///
+/// A link is anything anyone can send, so it can never point at this
+/// computer (loopback), an address that isn't one machine (unspecified,
+/// multicast, broadcast), a link-local one, an IPv4 address dressed up as
+/// IPv6, or a port under 1024 where system services listen. Addresses on a
+/// home network stay allowed: a party between two computers on the same
+/// Wi-Fi is what they are for.
+pub fn clean_host_addr(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() || raw.len() > 80 {
+        return None;
+    }
+    let parts: Vec<&str> = raw.split('/').collect();
+    let (net, host) = (*parts.get(1)?, *parts.get(2)?);
+    let ip_ok = match net {
+        "ip4" => host.parse::<std::net::Ipv4Addr>().ok().is_some_and(|ip| {
+            ip.octets()[0] != 0
+                && !(ip.is_loopback()
+                    || ip.is_link_local()
+                    || ip.is_multicast()
+                    || ip.is_broadcast())
+                && ip.to_string() == host
+        }),
+        "ip6" => host.parse::<std::net::Ipv6Addr>().ok().is_some_and(|ip| {
+            let first = ip.segments()[0];
+            !(ip.is_unspecified()
+                || ip.is_loopback()
+                || ip.is_multicast()
+                || (first & 0xffc0) == 0xfe80
+                || ip.to_ipv4_mapped().is_some()
+                || ip.segments()[..6] == [0, 0, 0, 0, 0, 0])
+        }),
+        _ => false,
+    };
+    if !ip_ok || parts.first() != Some(&"") {
+        return None;
+    }
+    let port_ok = |p: &str| {
+        !p.starts_with('0') && p.parse::<u16>().is_ok_and(|p| p >= 1024)
+    };
+    let ok = match &parts[3..] {
+        ["tcp", port] | ["udp", port, "quic-v1"] => port_ok(port),
+        _ => false,
+    };
+    ok.then(|| raw.to_string())
+}
+
+/// The `at=` list of a link: comma-separated addresses, every one of them
+/// usable, at most MAX_HOST_ADDRS, repeats dropped. Err refuses the link.
+fn host_addrs(raw: &str) -> Result<Vec<String>, ()> {
+    let mut out: Vec<String> = Vec::new();
+    for part in raw.split(',').filter(|p| !p.trim().is_empty()) {
+        let addr = clean_host_addr(part).ok_or(())?;
+        if !out.contains(&addr) {
+            out.push(addr);
+        }
+    }
+    if out.len() > MAX_HOST_ADDRS {
+        return Err(());
+    }
+    Ok(out)
+}
+
+/// A link to a party on someone's computer: `?peer=…&key=…[&relay=…][&at=…]`.
 /// None when the link names no peer; Err when what it names isn't usable.
 fn peer_params(query: &str) -> Result<Option<Peer>, ()> {
     let Some(peer) = param(query, "peer") else {
@@ -187,7 +259,16 @@ fn peer_params(query: &str) -> Result<Option<Peer>, ()> {
         None => None,
         Some(relay) => Some(clean_relay(&relay).ok_or(())?),
     };
-    Ok(Some(Peer { peer, key, relay }))
+    let addrs = match param(query, "at") {
+        None => Vec::new(),
+        Some(at) => host_addrs(&at)?,
+    };
+    Ok(Some(Peer {
+        peer,
+        key,
+        relay,
+        addrs,
+    }))
 }
 
 fn percent_decode(raw: &str) -> String {
@@ -239,7 +320,7 @@ fn link_server(query: &str) -> Option<String> {
 /// `?server=` names another server.
 pub fn parse_invite(text: &str) -> Option<Invite> {
     let text = text.trim();
-    if text.len() > 600 {
+    if text.len() > 1200 {
         return None;
     }
     let Some((scheme, rest)) = text.split_once("://") else {
@@ -435,7 +516,8 @@ mod tests {
             Some(Peer {
                 peer: peer.into(),
                 key: key.into(),
-                relay: None
+                relay: None,
+                addrs: vec![],
             })
         );
         // The key may ride in the fragment instead.
@@ -476,6 +558,66 @@ mod tests {
             assert_eq!(parse_invite(&bad), None, "{bad}");
         }
         assert!(clean_relay(&format!("/ip4/203.0.113.9/tcp/4001/p2p/{peer}")).is_some());
+    }
+
+    #[test]
+    fn a_host_computer_s_own_addresses() {
+        let peer = "12D3KooWGzBf9Cg7Lr5dNrYJcDP6CQsk2r7mRAbjaGsLc2ZLA7zz";
+        let key = "Abc_def-0123456789ghijkl";
+        let at = "/ip4/203.0.113.9/tcp/40211,/ip4/192.168.1.20/udp/40212/quic-v1,/ip6/2001:db8::5/tcp/40211";
+        let link = format!(
+            "wavebit://party/K7M2QX?peer={peer}&key={key}&at={}",
+            at.replace('/', "%2F").replace(',', "%2C")
+        );
+        let addrs = parse_invite(&link).unwrap().peer.unwrap().addrs;
+        assert_eq!(addrs.len(), 3);
+        // In the fragment too, where a browser never sends it anywhere.
+        let fragment = format!("wavebit://party/K7M2QX?peer={peer}#key={key}&at={at}");
+        assert_eq!(parse_invite(&fragment).unwrap().peer.unwrap().addrs.len(), 3);
+    }
+
+    #[test]
+    fn a_link_never_points_at_this_computer_or_a_system_port() {
+        for bad in [
+            "/ip4/127.0.0.1/tcp/40211",
+            "/ip4/0.0.0.0/tcp/40211",
+            "/ip4/0.1.2.3/tcp/40211",
+            "/ip4/169.254.1.1/tcp/40211",
+            "/ip4/224.0.0.1/udp/40211/quic-v1",
+            "/ip4/255.255.255.255/tcp/40211",
+            "/ip4/192.168.1.2/tcp/22",
+            "/ip4/192.168.1.2/tcp/0",
+            "/ip4/192.168.1.2/tcp/080",
+            "/ip4/192.168.1.2/tcp/70000",
+            "/ip4/192.168.1.2/udp/40211",
+            "/ip4/192.168.1.2/tcp/40211/p2p/12D3KooWGzBf9Cg7Lr5dNrYJcDP6CQsk2r7mRAbjaGsLc2ZLA7zz",
+            "/ip4/192.168.001.2/tcp/40211",
+            "/ip6/::1/tcp/40211",
+            "/ip6/::/tcp/40211",
+            "/ip6/fe80::1/tcp/40211",
+            "/ip6/::ffff:127.0.0.1/tcp/40211",
+            "/ip6/::127.0.0.1/tcp/40211",
+            "/ip6/ff02::1/tcp/40211",
+            "/dns4/example.com/tcp/40211",
+            "ip4/192.168.1.2/tcp/40211",
+        ] {
+            assert_eq!(clean_host_addr(bad), None, "{bad}");
+        }
+        assert!(clean_host_addr("/ip4/10.0.0.4/tcp/40211").is_some());
+        assert!(clean_host_addr("/ip6/2001:db8::5/udp/40211/quic-v1").is_some());
+        // One bad address, or too many, refuses the whole link.
+        let peer = "12D3KooWGzBf9Cg7Lr5dNrYJcDP6CQsk2r7mRAbjaGsLc2ZLA7zz";
+        let key = "Abc_def-0123456789ghijkl";
+        let one_bad = format!(
+            "wavebit://party/K7M2QX?peer={peer}&key={key}&at=/ip4/10.0.0.4/tcp/40211,/ip4/127.0.0.1/tcp/40211"
+        );
+        assert_eq!(parse_invite(&one_bad), None);
+        let many = (0..7)
+            .map(|i| format!("/ip4/10.0.0.{}/tcp/40211", i + 1))
+            .collect::<Vec<_>>()
+            .join(",");
+        let too_many = format!("wavebit://party/K7M2QX?peer={peer}&key={key}&at={many}");
+        assert_eq!(parse_invite(&too_many), None);
     }
 
     #[test]

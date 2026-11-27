@@ -5,9 +5,14 @@
 // outlive the app.
 //
 // Host:  {"mode":"host","bridgeKey":"…","partyKey":"…","relay":"/dns4/…/p2p/…","direct":true}
-// Join:  {"mode":"join","bridgeKey":"…","partyKey":"…","hostPeer":"12D3…","relay":"…","direct":true}
+// Join:  {"mode":"join","bridgeKey":"…","partyKey":"…","hostPeer":"12D3…","relay":"…","addrs":["/ip4/…/tcp/…"],"direct":true}
 //
-// Out:   {"event":"ready","port":43121,"peerId":"12D3…"}
+// The relay may be empty. A host then lists the addresses it can be reached
+// at (its home network's, and a port its router opened when the router
+// allows it), and a joiner dials those straight.
+//
+// Out:   {"event":"ready","port":43121,"peerId":"12D3…","addrs":["/ip4/…"],"public":true}
+// Out:   {"event":"addrs","addrs":["/ip4/…"],"public":true}
 // Out:   {"event":"links","direct":1,"relayed":0}
 // Out:   {"event":"error","code":"relay_unreachable"}
 package main
@@ -16,6 +21,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -33,13 +39,17 @@ import (
 )
 
 type settings struct {
-	Mode      string `json:"mode"`
-	BridgeKey string `json:"bridgeKey"`
-	PartyKey  string `json:"partyKey"`
-	HostPeer  string `json:"hostPeer"`
-	Relay     string `json:"relay"`
-	Direct    bool   `json:"direct"`
+	Mode      string   `json:"mode"`
+	BridgeKey string   `json:"bridgeKey"`
+	PartyKey  string   `json:"partyKey"`
+	HostPeer  string   `json:"hostPeer"`
+	Relay     string   `json:"relay"`
+	Addrs     []string `json:"addrs"`
+	Direct    bool     `json:"direct"`
 }
+
+// maxAddrs is how many addresses an invite lists for the host.
+const maxAddrs = 6
 
 var (
 	keyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{22,64}$`)
@@ -80,8 +90,22 @@ func main() {
 		cancel()
 	}()
 
-	node, err := p2p.NewNode(p2p.NodeOptions{Relay: s.Relay, Direct: s.Direct})
-	if err != nil {
+	// A guest's helper only ever talks to the host (and the relay).
+	var only peer.ID
+	if s.Mode == "join" {
+		if only, err = peer.Decode(s.HostPeer); err != nil {
+			fail("bad_invite")
+		}
+	}
+	node, err := p2p.NewNode(p2p.NodeOptions{
+		Relay:    s.Relay,
+		Direct:   s.Direct,
+		MapPort:  s.Mode == "host",
+		OnlyPeer: only,
+	})
+	if errors.Is(err, p2p.ErrNoPath) {
+		fail("no_relay")
+	} else if err != nil {
 		fail("bad_relay")
 	}
 	defer node.Close()
@@ -99,23 +123,30 @@ func main() {
 		go party.Run(ctx.Done())
 		stop := p2p.ServeParty(node, s.PartyKey, party.Handler())
 		defer stop()
-		ready := make(chan error, 1)
-		go node.KeepReservation(ctx, func(err error) { ready <- err })
-		select {
-		case err := <-ready:
-			if err != nil {
-				fail("relay_unreachable")
+		if node.HasRelay() {
+			ready := make(chan error, 1)
+			go node.KeepReservation(ctx, func(err error) { ready <- err })
+			select {
+			case err := <-ready:
+				if err != nil {
+					fail("relay_unreachable")
+				}
+			case <-ctx.Done():
+				return
 			}
-		case <-ctx.Done():
-			return
+		} else {
+			// No relay: give the router a moment to open a port, so the
+			// invite can list an address friends elsewhere can reach.
+			node.WaitForPublic(ctx, 5*time.Second)
 		}
 		handler = party.Handler()
 	case "join":
-		hostID, err := peer.Decode(s.HostPeer)
+		hostID := only
+		addrs, err := p2p.ParseHostAddrs(s.Addrs)
 		if err != nil {
 			fail("bad_invite")
 		}
-		if err := node.ConnectHost(ctx, hostID); err != nil {
+		if err := node.ConnectHost(ctx, hostID, addrs); err != nil {
 			fail("host_unreachable")
 		}
 		// Same network or same machine: straight there. Otherwise hole
@@ -136,11 +167,21 @@ func main() {
 	go func() { _ = bridge.Serve(listener) }()
 	defer bridge.Close()
 
-	say(map[string]interface{}{
-		"event":  "ready",
-		"port":   listener.Addr().(*net.TCPAddr).Port,
-		"peerId": node.Host.ID().String(),
-	})
+	shared := func() (map[string]interface{}, string) {
+		addrs, public := []string{}, false
+		if s.Mode == "host" {
+			addrs, public = node.ShareAddrs(maxAddrs)
+			if addrs == nil {
+				addrs = []string{}
+			}
+		}
+		return map[string]interface{}{"addrs": addrs, "public": public}, fmt.Sprint(addrs)
+	}
+	ready, lastAddrs := shared()
+	ready["event"] = "ready"
+	ready["port"] = listener.Addr().(*net.TCPAddr).Port
+	ready["peerId"] = node.Host.ID().String()
+	say(ready)
 
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
@@ -155,6 +196,13 @@ func main() {
 			if now != last {
 				last = now
 				say(map[string]interface{}{"event": "links", "direct": direct, "relayed": relayed})
+			}
+			// A router can open its port late, and a laptop can change
+			// networks: the invite follows.
+			if now, key := shared(); key != lastAddrs {
+				lastAddrs = key
+				now["event"] = "addrs"
+				say(now)
 			}
 		}
 	}

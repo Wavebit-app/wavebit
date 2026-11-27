@@ -64,6 +64,7 @@ export const Channels = {
   youtubeStreamResolve: 'youtube:streamResolve',
   youtubeStreamRelease: 'youtube:streamRelease',
   youtubeRadio: 'youtube:radio',
+  youtubeVideo: 'youtube:video',
   youtubeSearch: 'youtube:search',
   youtubeOAuthStatus: 'youtube:oauthStatus',
   youtubeOAuthConfigure: 'youtube:oauthConfigure',

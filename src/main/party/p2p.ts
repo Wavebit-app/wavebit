@@ -23,8 +23,13 @@ export interface Helper {
   /** The host's identity: this computer's, or the one the invite named. */
   hostPeer: string;
   partyKey: string;
-  relay: string;
+  /** The relay, or null when the party is reached at `addrs` only. */
+  relay: string | null;
   links: { direct: number; relayed: number };
+  /** Where this computer can be reached directly, for a host's invite. */
+  addrs: string[];
+  /** One of `addrs` is reachable from the internet. */
+  isPublic: boolean;
   stop(): void;
 }
 
@@ -44,15 +49,17 @@ const READY_TIMEOUT_MS = 45_000;
 
 /**
  * Starts the helper and waits until its bridge answers. Rejects with a fault
- * code: `helper_missing`, `relay_unreachable`, `host_unreachable`,
- * `p2p_failed`.
+ * code: `helper_missing`, `no_relay`, `relay_unreachable`,
+ * `host_unreachable`, `p2p_failed`.
  */
 export function startHelper(options: {
   mode: 'host' | 'join';
   partyKey: string;
-  relay: string;
+  relay: string | null;
   direct: boolean;
   hostPeer?: string;
+  /** For a joiner: the addresses the invite listed for the host. */
+  addrs?: readonly string[];
   onLinks: (links: { direct: number; relayed: number }) => void;
   onExit: () => void;
 }): Promise<Helper> {
@@ -78,7 +85,8 @@ export function startHelper(options: {
       bridgeKey,
       partyKey: options.partyKey,
       hostPeer: options.hostPeer ?? '',
-      relay: options.relay,
+      relay: options.relay ?? '',
+      addrs: options.addrs ?? [],
       direct: options.direct,
     })}\n`,
   );
@@ -112,15 +120,26 @@ export function startHelper(options: {
           partyKey: options.partyKey,
           relay: options.relay,
           links: { direct: 0, relayed: 0 },
+          addrs: event.addrs,
+          isPublic: event.public,
           stop,
         };
         resolve(helper);
       } else if (event.event === 'links' && helper) {
         helper.links = { direct: event.direct, relayed: event.relayed };
         options.onLinks(helper.links);
+      } else if (event.event === 'addrs' && helper) {
+        helper.addrs = event.addrs;
+        helper.isPublic = event.public;
+        options.onLinks(helper.links);
       } else if (event.event === 'error' && !helper) {
         clearTimeout(timer);
-        const known = ['relay_unreachable', 'host_unreachable', 'bad_relay'];
+        const known = [
+          'no_relay',
+          'relay_unreachable',
+          'host_unreachable',
+          'bad_relay',
+        ];
         reject(
           new Error(known.includes(event.code) ? event.code : 'p2p_failed'),
         );

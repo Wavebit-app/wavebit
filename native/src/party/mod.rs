@@ -101,6 +101,8 @@ pub struct PartyInvite {
     pub peer: Option<String>,
     pub key: Option<String>,
     pub relay: Option<String>,
+    /// The addresses the host's computer can be reached at directly.
+    pub addrs: Option<Vec<String>>,
 }
 
 /// Reads a code or an invite link; null for anything else.
@@ -111,6 +113,7 @@ pub fn party_parse_invite(text: String) -> Option<PartyInvite> {
         server: i.server,
         peer: i.peer.as_ref().map(|p| p.peer.clone()),
         key: i.peer.as_ref().map(|p| p.key.clone()),
+        addrs: i.peer.as_ref().map(|p| p.addrs.clone()),
         relay: i.peer.and_then(|p| p.relay),
     })
 }

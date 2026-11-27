@@ -266,16 +266,17 @@ const FAULTS: Record<string, string> = {
   server_full: 'The party server is busy. Try again in a few minutes.',
   validation_error: 'The party server didn’t accept your name or picture.',
   no_relay:
-    'Hosting on this computer needs a relay. Add its address in Settings › Listen together.',
+    'This needs direct connections or a relay. Turn on Allow direct connections in Settings › Listen together.',
   relay_unreachable:
     'Couldn’t reach the relay. Check your connection, or the relay address in Settings.',
   bad_relay: 'That relay address can’t be used.',
   host_unreachable:
-    'Can’t reach the host’s computer. It may be asleep, or the party ended.',
+    'Can’t reach the host’s computer. It may be asleep, the party ended, or its router keeps it closed to other networks.',
   helper_missing:
     'This build of wavebit can’t host or join parties on a computer.',
   p2p_stopped: 'The connection to the party’s computer stopped.',
   p2p_failed: 'Couldn’t start the connection for a party on a computer.',
+  bad_invite: 'That invite link isn’t complete. Ask for a new one.',
 };
 
 /**
