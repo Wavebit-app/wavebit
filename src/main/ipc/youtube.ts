@@ -27,6 +27,7 @@ import {
   page,
   save,
   status,
+  video,
 } from '../youtube/service';
 import { googleAccount } from '../youtube/dataApi';
 import {
@@ -71,6 +72,7 @@ export function registerYouTubeIpc(): void {
       releaseStream(event.sender.id, request.requestId, request.leaseId),
   );
   handle(Channels.youtubeRadio, YtRadioSchema, ({ videoId }) => radio(videoId));
+  handle(Channels.youtubeVideo, YtRadioSchema, ({ videoId }) => video(videoId));
   handle(Channels.youtubeSearch, YtSearchSchema, ({ query }) => search(query));
   handle(Channels.youtubeOAuthStatus, NoInput, () => oauthStatus());
   handle(

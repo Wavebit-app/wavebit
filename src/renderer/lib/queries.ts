@@ -671,6 +671,15 @@ export function useYtOAuthActions() {
 
 // --- Search beyond the files ----------------------------------------------------
 
+/** One YouTube song or video, for a pasted link. */
+export const useYtVideo = (videoId: string | null) =>
+  useQuery({
+    queryKey: ['youtube', 'video', videoId],
+    queryFn: () => api().youtube.video(videoId!),
+    enabled: !!videoId,
+    staleTime: 60 * 60_000,
+  });
+
 export const useYtSearch = (query: string) =>
   useQuery({
     queryKey: ['youtube', 'search', query],

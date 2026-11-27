@@ -96,6 +96,7 @@ const api: WavebitApi = {
     releaseStream: (requestId, leaseId) =>
       invoke(Channels.youtubeStreamRelease, { requestId, leaseId }),
     radio: (videoId) => invoke(Channels.youtubeRadio, { videoId }),
+    video: (videoId) => invoke(Channels.youtubeVideo, { videoId }),
     search: (query) => invoke(Channels.youtubeSearch, { query }),
     oauth: {
       status: () => invoke(Channels.youtubeOAuthStatus),

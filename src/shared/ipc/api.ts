@@ -246,6 +246,8 @@ export interface WavebitApi {
     ): Promise<void>;
     /** AutoPlay's next songs after this one (YouTube Music's radio). */
     radio(videoId: string): Promise<YtRadioSong[]>;
+    /** One song or video by id, for a pasted link; null when YouTube Music doesn't list it. */
+    video(videoId: string): Promise<YtRadioSong | null>;
     /** YouTube Music's search, as shelves. */
     search(query: string): Promise<YtShelf[]>;
     /** Signing in through the default browser (Google's desktop-app OAuth). */

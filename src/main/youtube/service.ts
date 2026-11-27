@@ -359,6 +359,28 @@ const core = (title: string) =>
     .trim();
 
 /**
+ * One song or video by its id, for a pasted link: the seed of its radio,
+ * which carries the title, credit, length and cover. Null when YouTube Music
+ * doesn't list it. Cached like the radio.
+ */
+export async function video(videoId: string): Promise<RadioSong | null> {
+  const k = await key(`video:${videoId}`);
+  const hit = cached<RadioSong>(k);
+  if (hit) return hit;
+  const found =
+    parseRadio(
+      await innertube('next', {
+        videoId,
+        playlistId: `RDAMVM${videoId}`,
+        isAudioOnly: true,
+        enablePersistentPlaylistPanel: true,
+      }),
+    ).find((s) => s.videoId === videoId) ?? null;
+  if (found) store(k, found, RADIO_TTL_S);
+  return found;
+}
+
+/**
  * AutoPlay's next songs, after BitChord's extendStation: YouTube Music's
  * radio for the seed (`next` on RDAMVM<id>), at most 10, one per recording,
  * no more than 2 from any artist (4 from the seed's own), the catalogue
