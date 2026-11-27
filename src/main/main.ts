@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, session } from 'electron';
+import { setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 import path from 'node:path';
 import { startDiscordPresence, stopDiscordPresence } from './discord/presence';
 import { startDownloads } from './downloads/downloads';
@@ -41,6 +42,11 @@ import {
   showWindow,
   trayActive,
 } from './window/tray';
+
+// Node tries IPv6 and IPv4 for 250 ms each by default. On a connection with
+// more latency than that, every attempt "times out" though the server is
+// there, and YouTube's video servers were unreachable from main.
+setDefaultAutoSelectFamilyAttemptTimeout(2_500);
 
 // Dev and test runs can point at a throwaway profile; packaged builds ignore this.
 if (!app.isPackaged && process.env.WAVEBIT_USER_DATA)

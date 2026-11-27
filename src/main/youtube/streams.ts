@@ -10,16 +10,21 @@ import type {
 import { killTree } from '../process/killTree';
 import { isTrustedOrigin } from '../security/origin';
 import {
+  askedRange,
+  parseContentRange,
   mediaContentType,
   mediaRangeAllowed,
   leaseActive,
   mayReleaseLease,
   selectFormats,
   streamResolverArgs,
+  STREAM_CHUNK_BYTES,
   STREAM_LEASE_MS,
   STREAM_OUTPUT_LIMIT,
   STREAM_RESOLVE_TIMEOUT_MS,
+  streamRequestAllowed,
   streamUrlAllowed,
+  upstreamRange,
   type YtDlpInfo,
 } from './streamRules';
 
@@ -238,7 +243,7 @@ export function releaseStream(
 
 async function fetchAllowed(
   url: string,
-  range: string | null,
+  range: string,
   signal: AbortSignal,
 ): Promise<Response> {
   let current = url;
@@ -250,7 +255,7 @@ async function fetchAllowed(
       cache: 'no-store',
       credentials: 'omit',
       signal,
-      headers: range ? { Range: range } : {},
+      headers: { Range: range },
     });
     if (response.status < 300 || response.status >= 400) return response;
     const location = response.headers.get('Location');
@@ -269,7 +274,13 @@ export async function streamMedia(
   kind: StreamKind,
 ): Promise<Response> {
   const origin = request.headers.get('Origin');
-  if (!origin || !isTrustedOrigin(origin))
+  if (
+    !streamRequestAllowed(
+      origin,
+      request.headers.get('Referer'),
+      isTrustedOrigin,
+    )
+  )
     return new Response('Forbidden', { status: 403 });
   if (request.method !== 'GET' && request.method !== 'HEAD')
     return new Response('Method not allowed', { status: 405 });
@@ -280,34 +291,130 @@ export async function streamMedia(
   const lease = leases.get(leaseId);
   if (!lease || !leaseActive(lease.expiresAt, Date.now()))
     return new Response('Gone', { status: 410 });
+  // A lease lasts as long as the player keeps reading it: a long mix is read
+  // for an hour, and its next piece must not find the lease gone at 10 min.
+  lease.expiresAt = Date.now() + STREAM_LEASE_MS;
   const upstreamUrl = kind === 'audio' ? lease.audioUrl : lease.videoUrl;
   if (!streamUrlAllowed(upstreamUrl))
     return new Response('Gone', { status: 410 });
-  try {
-    const upstream = await fetchAllowed(
-      upstreamUrl,
-      range,
-      AbortSignal.any([request.signal, AbortSignal.timeout(30_000)]),
-    );
-    const headers = new Headers({
-      'Content-Type': kind === 'audio' ? lease.audioType : lease.videoType,
-      'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
+  const headers = new Headers({
+    'Content-Type': kind === 'audio' ? lease.audioType : lease.videoType,
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Accept-Ranges': 'bytes',
+    ...(origin && {
       'Access-Control-Allow-Origin': origin,
       Vary: 'Origin',
-    });
-    for (const name of ['Content-Length', 'Content-Range', 'Accept-Ranges']) {
-      const value = upstream.headers.get(name);
-      if (value) headers.set(name, value);
+    }),
+  });
+  try {
+    const first = await fetchPiece(
+      upstreamUrl,
+      upstreamRange(range),
+      request.signal,
+    );
+    const piece = parseContentRange(first.headers.get('Content-Range'));
+    const asked = piece ? askedRange(range, piece.total) : null;
+    // A suffix range, or an answer that isn't a piece of the file: passed
+    // on as it came, as before.
+    if (first.status !== 206 || !piece || !asked || piece.start !== asked[0]) {
+      for (const name of ['Content-Length', 'Content-Range']) {
+        const value = first.headers.get(name);
+        if (value) headers.set(name, value);
+      }
+      const status = [200, 206, 416, 403, 404, 410].includes(first.status)
+        ? first.status
+        : 502;
+      return new Response(request.method === 'HEAD' ? null : first.body, {
+        status,
+        headers,
+      });
     }
-    const status = [200, 206, 416, 403, 404, 410].includes(upstream.status)
-      ? upstream.status
-      : 502;
-    return new Response(request.method === 'HEAD' ? null : upstream.body, {
-      status,
-      headers,
-    });
+    // Answered whole, as the player asked: a shorter answer than asked for
+    // reads to Chromium as the end of the file. Behind it, the rest comes
+    // from YouTube one piece at a time.
+    const [start, end] = asked;
+    headers.set('Content-Length', String(end - start + 1));
+    if (range)
+      headers.set('Content-Range', `bytes ${start}-${end}/${piece.total}`);
+    if (request.method === 'HEAD') {
+      void first.body?.cancel();
+      return new Response(null, { status: range ? 206 : 200, headers });
+    }
+    return new Response(
+      pieces(first, upstreamUrl, piece.end + 1, end, request.signal),
+      { status: range ? 206 : 200, headers },
+    );
   } catch {
     return new Response('Stream unavailable', { status: 502 });
   }
+}
+
+/** One piece from YouTube; waiting for its answer is limited to 30 s. */
+async function fetchPiece(
+  url: string,
+  range: string,
+  signal: AbortSignal,
+): Promise<Response> {
+  const answer = new AbortController();
+  const slow = setTimeout(() => answer.abort(), 30_000);
+  try {
+    return await fetchAllowed(
+      url,
+      range,
+      AbortSignal.any([signal, answer.signal]),
+    );
+  } finally {
+    clearTimeout(slow);
+  }
+}
+
+/**
+ * The body of one answer: `first`, then pieces from `next` to `end`, each
+ * asked for only once the one before is read, so nothing is fetched ahead
+ * of what the player reads. Stops when the player hangs up.
+ */
+function pieces(
+  first: Response,
+  url: string,
+  next: number,
+  end: number,
+  signal: AbortSignal,
+): ReadableStream<Uint8Array> {
+  const stop = new AbortController();
+  const both = AbortSignal.any([signal, stop.signal]);
+  let reader = first.body!.getReader();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (!done) {
+          controller.enqueue(value);
+          return;
+        }
+        if (next > end) {
+          controller.close();
+          return;
+        }
+        const pieceEnd = Math.min(next + STREAM_CHUNK_BYTES - 1, end);
+        const response = await fetchPiece(
+          url,
+          `bytes=${next}-${pieceEnd}`,
+          both,
+        );
+        const got = parseContentRange(response.headers.get('Content-Range'));
+        if (response.status !== 206 || !got || got.start !== next) {
+          void response.body?.cancel();
+          controller.error(new Error('stream piece'));
+          return;
+        }
+        reader = response.body!.getReader();
+        next = got.end + 1;
+      }
+    },
+    cancel() {
+      stop.abort();
+      void reader.cancel().catch(() => {});
+    },
+  });
 }

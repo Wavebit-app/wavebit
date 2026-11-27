@@ -3,8 +3,17 @@ import { onDomain } from '../security/urls.ts';
 export const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 export const STREAM_HOSTS = ['googlevideo.com'] as const;
 export const STREAM_LEASE_MS = 10 * 60_000;
-export const STREAM_RESOLVE_TIMEOUT_MS = 25_000;
+// yt-dlp takes 10 to 15 s for a long video, more on a slow connection.
+export const STREAM_RESOLVE_TIMEOUT_MS = 45_000;
 export const STREAM_OUTPUT_LIMIT = 8 * 1024 * 1024;
+/**
+ * The most asked of YouTube's servers at once. They send a request for more
+ * than about 10 MB at little more than playback speed, which starved long
+ * mixes; and the player only starts once the whole first piece has arrived
+ * (measured on a 500 KB/s line: 3.6 s at 1 MB, 7 to 11 s at 2 MB, 17 s at
+ * 8 MB). The player asks for the next piece as it needs it.
+ */
+export const STREAM_CHUNK_BYTES = 1024 * 1024;
 
 export interface YtDlpFormat {
   url?: unknown;
@@ -82,6 +91,69 @@ export function mediaRangeAllowed(value: string | null): boolean {
   );
 }
 
+/**
+ * The range asked of YouTube for one the player asked of wavebit: the same
+ * start, at most STREAM_CHUNK_BYTES long. A suffix range (the last N bytes)
+ * is passed on as it is; the player only asks for small ones.
+ */
+export function upstreamRange(
+  value: string | null,
+  chunk = STREAM_CHUNK_BYTES,
+): string {
+  const match = value ? /^bytes=(\d*)-(\d*)$/.exec(value) : null;
+  if (value && match && !match[1]) return value;
+  const start = match?.[1] ? Number(match[1]) : 0;
+  const asked = match?.[2] ? Number(match[2]) : Number.POSITIVE_INFINITY;
+  const end = Math.min(asked, start + chunk - 1);
+  return `bytes=${start}-${end}`;
+}
+
+/** `bytes a-b/total` from a Content-Range header, or null. */
+export function parseContentRange(
+  value: string | null,
+): { start: number; end: number; total: number } | null {
+  const match = value ? /^bytes (\d+)-(\d+)\/(\d+)$/.exec(value) : null;
+  if (!match) return null;
+  const [start, end, total] = [match[1], match[2], match[3]].map(Number);
+  return Number.isSafeInteger(total) && start! <= end! && end! < total!
+    ? { start: start!, end: end!, total: total! }
+    : null;
+}
+
+/**
+ * The bytes the player asked for, as [start, end] within a file of `total`
+ * bytes: the whole rest of the file for an open range. Null for a suffix
+ * range or one that starts past the end.
+ */
+export function askedRange(
+  value: string | null,
+  total: number,
+): [number, number] | null {
+  if (value === null) return total > 0 ? [0, total - 1] : null;
+  const match = /^bytes=(\d+)-(\d*)$/.exec(value);
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = match[2] ? Math.min(Number(match[2]), total - 1) : total - 1;
+  return start <= end ? [start, end] : null;
+}
+
+/**
+ * Whether a media:// stream request may come from this app's page. The
+ * player's media requests reach the handler with neither Origin nor
+ * Referer, as library files do, so their absence is allowed; the lease id
+ * in the address is random and short-lived. A request that does say where
+ * it comes from must come from the app's own page.
+ */
+export function streamRequestAllowed(
+  origin: string | null,
+  referer: string | null,
+  trusted: (url: string) => boolean,
+): boolean {
+  if (origin !== null && !trusted(origin)) return false;
+  // `trusted` reads a whole address (isTrustedOrigin), as Referer is one.
+  return referer === null || trusted(referer);
+}
+
 export function leaseActive(expiresAt: number, now: number): boolean {
   return Number.isSafeInteger(expiresAt) && expiresAt > now;
 }
@@ -96,7 +168,13 @@ function number(value: unknown): number | null {
     : null;
 }
 
+/**
+ * A format the player can read as one file: plain HTTPS. yt-dlp also lists
+ * HLS (`m3u8_native`) formats on googlevideo.com with the same codecs and
+ * heights; their URL is a playlist, which a media element can't parse.
+ */
 function formatUrl(format: YtDlpFormat): string | null {
+  if (format.protocol !== undefined && format.protocol !== 'https') return null;
   return streamUrlAllowed(format.url) ? format.url : null;
 }
 
@@ -112,6 +190,14 @@ function audioMime(format: YtDlpFormat): string {
   if (format.ext === 'ogg') return 'audio/ogg';
   return 'application/octet-stream';
 }
+
+/**
+ * 1 for WebM. YouTube's MP4 files are fragmented (DASH): Chromium can only
+ * seek within the part it has already read, so a jump further on (resuming
+ * a long mix, or the seek bar) lands at the end and the song counts as
+ * finished. Its WebM files carry their seek index at the start.
+ */
+const seekable = (format: YtDlpFormat) => (format.ext === 'webm' ? 1 : 0);
 
 /** Selects independent audio and video-only CDN formats from yt-dlp metadata. */
 export function selectFormats(
@@ -131,14 +217,11 @@ export function selectFormats(
         formatUrl(format) !== null &&
         ['m4a', 'mp4', 'webm', 'ogg'].includes(String(format.ext)),
     )
-    .sort((a, b) => {
-      const ext = (value: YtDlpFormat) =>
-        value.ext === 'm4a' || value.ext === 'mp4' ? 2 : 1;
-      return (
-        ext(b) - ext(a) ||
-        (number(b.abr ?? b.tbr) ?? 0) - (number(a.abr ?? a.tbr) ?? 0)
-      );
-    })[0];
+    .sort(
+      (a, b) =>
+        seekable(b) - seekable(a) ||
+        (number(b.abr ?? b.tbr) ?? 0) - (number(a.abr ?? a.tbr) ?? 0),
+    )[0];
   const videos = formats.filter(
     (format) =>
       format.acodec === 'none' &&
@@ -165,10 +248,9 @@ export function selectFormats(
       typeof format.vcodec === 'string' && format.vcodec.startsWith('avc1')
         ? 1
         : 0;
-    const mp4 = (format: YtDlpFormat) => (format.ext === 'mp4' ? 1 : 0);
     return (
+      seekable(b) - seekable(a) ||
       h264(b) - h264(a) ||
-      mp4(b) - mp4(a) ||
       (number(b.height) ?? 0) - (number(a.height) ?? 0) ||
       (number(b.fps) ?? 0) - (number(a.fps) ?? 0)
     );
