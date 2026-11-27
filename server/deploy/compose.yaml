@@ -1,0 +1,34 @@
+# Caddy for HTTPS in front of the party server. Run from server/:
+#   DOMAIN=party.example.com docker compose -f deploy/compose.yaml up -d --build
+services:
+  party:
+    build: ..
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 400m
+    pids_limit: 256
+    environment:
+      JAM_PUBLIC_ORIGIN: https://${DOMAIN:?set DOMAIN}
+      JAM_CLIENT_IP_HEADER: X-Real-IP
+      # Only Caddy, on the compose network, may say who the client is.
+      JAM_TRUSTED_PROXIES: 172.16.0.0/12,10.0.0.0/8,192.168.0.0/16
+      JAM_MAX_PARTIES: '200'
+    expose: ['8000']
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [party]
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile.compose:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

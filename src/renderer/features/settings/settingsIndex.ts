@@ -259,13 +259,45 @@ export const SETTINGS: SettingEntry[] = [
       'A short notice at the bottom of the window.',
       'listen together toast notification members',
     ],
+    [
+      'partyShowReactions',
+      'Show reactions',
+      'Others’ reactions float up in the party drawer and show on their picture in the title bar. Yours always show.',
+      'listen together emoji react heart fire clap',
+    ],
   ]),
   ...group('party', 'Party server', [
     [
-      'partyServer',
-      'Server address',
+      'partyServerChoice',
+      'Party server',
       'Where your parties are started. An invite on another server asks first.',
-      'listen together bitchord host url custom self-hosted',
+      'listen together wavebit bitchord host url custom self-hosted',
+    ],
+    [
+      'partyServer',
+      'Custom server address',
+      'An https address, or a server on this computer.',
+      'listen together host url custom self-hosted own server',
+    ],
+  ]),
+  ...group('party', 'This device', [
+    [
+      'partyHostHere',
+      'Host on this device',
+      'Parties you start run on this computer instead of a server. They end when you quit.',
+      'listen together p2p peer to peer serverless local host computer',
+    ],
+    [
+      'partyDirect',
+      'Allow direct connections',
+      'Faster, but people in a party you host or join on a computer can see your address on the internet. Off sends everything through the relay.',
+      'listen together p2p privacy ip address relay hole punching',
+    ],
+    [
+      'partyRelay',
+      'Relay address',
+      'Leave empty to use wavebit’s relay.',
+      'listen together p2p relay libp2p multiaddr',
     ],
   ]),
   ...group('downloads', 'Your library', [

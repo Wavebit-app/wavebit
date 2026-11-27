@@ -93,7 +93,7 @@ export declare class Library {
  * JSON each time any of it changes.
  */
 export declare class Party {
-  constructor(onChange: ((arg: string) => unknown))
+  constructor(onChange: ((arg: string) => unknown), onReaction: ((arg: string) => unknown))
   /** Starts a party on `server` and joins it as host. */
   create(server: string, who: PartyIdentity, autoplay: boolean): void
   join(server: string, code: string, who: PartyIdentity): void
@@ -104,6 +104,11 @@ export declare class Party {
   leave(waitMs: number): void
   /** Sends one control, as JSON with an `action`. Unknown actions are dropped. */
   control(frame: string): void
+  /**
+   * Sends one reaction by its id. Unknown ids, a server without reactions
+   * and too many at once are dropped.
+   */
+  react(id: string): void
   /** Measures the clock again and asks the server to restate where the party is. */
   sync(): void
 }
@@ -222,6 +227,12 @@ export interface MatchInput {
 
 export declare function nativeVersion(): string
 
+/**
+ * A relay address typed in Settings, or null. Settings may name one on this
+ * computer or the local network; a link may not.
+ */
+export declare function partyCleanRelay(text: string): string | null
+
 /** `https://host[:port]`, or null when the text isn't a server wavebit will talk to. */
 export declare function partyCleanServer(text: string): string | null
 
@@ -235,8 +246,15 @@ export interface PartyIdentity {
 
 export interface PartyInvite {
   code: string
-  /** Null means whichever server this device already uses. */
+  /**
+   * Null for a typed code (whichever server this device uses) and for a
+   * party on someone's computer.
+   */
   server?: string
+  /** A party on someone's computer: their peer id, the key, the relay. */
+  peer?: string
+  key?: string
+  relay?: string
 }
 
 /** Reads a code or an invite link; null for anything else. */
@@ -268,7 +286,15 @@ export interface PartyProbe {
   roundTripMs: number
   parties?: number
   members?: number
+  /** It said it passes reactions on. */
+  reactions: boolean
 }
+
+/**
+ * Sets, or with nulls clears, the bridge every request to that origin gets
+ * its secret for.
+ */
+export declare function partySetBridge(origin?: string | undefined | null, secret?: string | undefined | null): void
 
 export interface ScanProgress {
   running: boolean

@@ -71,6 +71,11 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native
+      # The helper behind Listen together's Host on this device (scripts/build-helper.mjs).
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
       - name: Install Linux packaging tools
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y rpm
@@ -84,6 +89,8 @@ jobs:
           npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts --allow-same-version
       - name: Build installers
         env:
+          # Fail instead of leaving Host on this device out when Go is missing.
+          WAVEBIT_REQUIRE_HELPER: '1'
           # Public Discord application ID used for local Rich Presence.
           WAVEBIT_DISCORD_CLIENT_ID: ${{ vars.WAVEBIT_DISCORD_CLIENT_ID }}
           # Each platform turns on when its secrets exist (.github/RELEASING.md).
@@ -99,6 +106,17 @@ jobs:
           AZURE_CLIENT_ID: ${{ runner.os == 'Windows' && secrets.AZURE_CLIENT_ID || '' }}
           AZURE_CLIENT_SECRET: ${{ runner.os == 'Windows' && secrets.AZURE_CLIENT_SECRET || '' }}
         run: npm run dist
+      # Host on this device needs the helper (server/cmd/wavebit-p2p) in the app.
+      - name: The helper is in the app and runs
+        run: |
+          helper=tools/wavebit-p2p
+          if [ "$RUNNER_OS" = Windows ]; then helper=$helper.exe; fi
+          out=$(echo '{}' | "$helper" || true)
+          echo "$out"
+          [ "$out" = '{"code":"bad_settings","event":"error"}' ]
+          found=$(find out/builder -path '*tools/wavebit-p2p*' -type f)
+          echo "$found"
+          [ -n "$found" ]
       - name: Collect installers and checksums
         run: node scripts/release-assets.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -1,13 +1,67 @@
 import { z } from 'zod';
 
 /**
- * Listen together. The party server is BitChord's, and so is the wire format
- * (its `backend/README.md`); the Rust module reads and checks every frame, so
- * these are the shapes it hands on.
+ * Listen together. The wire format is BitChord's (its `backend/README.md`);
+ * wavebit's own server (`server/`) speaks it too, plus reactions. The Rust
+ * module reads and checks every frame, so these are the shapes it hands on.
  */
 
-/** BitChord's own server: wavebit and BitChord listeners can share a party. */
-export const DEFAULT_PARTY_SERVER = 'https://api.bitchord.kushagrasingh.in';
+/** BitChord's server: wavebit and BitChord listeners can share a party there. */
+export const BITCHORD_PARTY_SERVER = 'https://api.bitchord.kushagrasingh.in';
+
+/**
+ * wavebit's own party server (`server/`), or null until it is deployed. While
+ * it is null, choosing it in Settings uses BitChord's.
+ */
+export const WAVEBIT_PARTY_SERVER: string | null = null;
+
+/**
+ * wavebit's relay for Host on this device (`server/cmd/wavebit-relay`), a
+ * multiaddr ending in `/p2p/<id>`, or null until it is deployed. While it is
+ * null, hosting on this device needs a relay address in Settings.
+ */
+export const WAVEBIT_RELAY: string | null = null;
+
+/** Where new parties go, as Settings › Listen together › Party server chooses. */
+export const PartyServerChoiceSchema = z.enum([
+  'wavebit',
+  'bitchord',
+  'custom',
+]);
+export type PartyServerChoice = z.infer<typeof PartyServerChoiceSchema>;
+
+/**
+ * The reactions, in the order the drawer shows them. Only the ids travel; the
+ * emoji are drawn here. Must match `server/protocol/reactions.json` (a test checks).
+ */
+export const PARTY_REACTIONS = [
+  'heart',
+  'fire',
+  'laugh',
+  'wow',
+  'sad',
+  'clap',
+  'party',
+  'dance',
+] as const;
+export type PartyReactionId = (typeof PARTY_REACTIONS)[number];
+
+/** One reaction from someone in the party, as the Rust module checked it. */
+export interface PartyReaction {
+  /** Climbs within a party; never shown twice. */
+  id: number;
+  memberId: string;
+  /** From the member list, not from the reaction. */
+  displayName: string;
+  reaction: PartyReactionId;
+  atMs: number;
+  /** Sent from this device. */
+  mine: boolean;
+}
+
+export const PartyReactSchema = z
+  .object({ reaction: z.enum(PARTY_REACTIONS) })
+  .strict();
 
 /**
  * Where `docs/invite/index.html` is published, ending in `/invite/`, or null
@@ -82,6 +136,8 @@ export interface PartySession {
   /** A create or join is on its way. */
   busy: boolean;
   error: PartyFault | null;
+  /** The party's server passes reactions on. */
+  reactions: boolean;
 }
 
 /** Who is in a party, for someone invited to it; the server tells anyone holding the code. */
@@ -94,10 +150,20 @@ export interface PartyPreview {
 
 export interface PartyInvite {
   code: string;
+  /** A server, or for a party on someone's computer, "a computer · <safety number>". */
   host: string;
+  /** On a server, or on someone's computer (Host on this device). */
+  kind: 'server' | 'p2p';
+  /** For a computer: the safety number both screens show. */
+  safety: string | null;
+  /** For a computer: the relay, when the link names one other than wavebit's. */
+  otherRelay: string | null;
   /** It is on a server other than the one this device uses. */
   otherServer: boolean;
-  /** Null while it is being asked for, or when the server can't say. */
+  /**
+   * Null while it is being asked for, when the server can't say, and always
+   * for another server: nothing is sent there before a press.
+   */
   preview: PartyPreview | null;
 }
 
@@ -108,6 +174,22 @@ export interface PartyState extends PartySession {
   invite: PartyInvite | null;
   /** The server parties are started on. */
   serverHost: string;
+  /** This build has the helper Host on this device needs. */
+  p2pAvailable: boolean;
+  /** In a party on a computer (this one or someone's): how it is connected. */
+  p2p: PartyP2p | null;
+  /** The link to share, when it isn't the usual one: for a party hosted here. */
+  inviteLink: string | null;
+}
+
+export interface PartyP2p {
+  /** This computer hosts the party. */
+  hosting: boolean;
+  /** The safety number both screens show, from the host's identity. */
+  safety: string;
+  /** Others connected straight to this computer, and through the relay. */
+  direct: number;
+  relayed: number;
 }
 
 export const IDLE_PARTY: PartySession = {
@@ -137,6 +219,7 @@ export const IDLE_PARTY: PartySession = {
   offsetMs: 0,
   busy: false,
   error: null,
+  reactions: false,
 };
 
 export interface PartyProbe {
@@ -144,6 +227,8 @@ export interface PartyProbe {
   roundTripMs: number;
   parties: number | null;
   members: number | null;
+  /** It said it passes reactions on. */
+  reactions: boolean;
 }
 
 /** The account name and picture the page knows, offered as who to join as. */
@@ -221,4 +306,12 @@ export const PartyCreateSchema = z.object({ autoplay: z.boolean() }).strict();
 /** A code, or a pasted invite link. */
 export const PartyJoinSchema = z
   .object({ text: z.string().min(1).max(600) })
+  .strict();
+
+/** The invite the press was for, so a link that arrived since can't take its place. */
+export const PartyAcceptSchema = z
+  .object({
+    code: z.string().regex(/^[A-Z0-9]{6}$/),
+    host: z.string().min(1).max(200),
+  })
   .strict();

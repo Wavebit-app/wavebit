@@ -10,11 +10,14 @@ import {
 } from '../player/player';
 import {
   controlsLocked,
+  MAX_START_WAIT_MS,
   msUntilStart,
   newDrift,
   partyPositionMs,
   queueIndexOf,
   shouldSeek,
+  SONG_FLOOD_PAUSE_MS,
+  songFlood,
   supplierId,
 } from './partyRules';
 import { partyNow, serverNow, watchParty } from './store';
@@ -138,6 +141,10 @@ const sameIds = (
 // --- State ------------------------------------------------------------------------
 
 let quietUntil = 0;
+/** Song changes others made, for noticing when they come too fast to follow. */
+let songChanges: number[] = [];
+let countedSong: string | null = null;
+let floodUntil = 0;
 /** The party states that will show every control this device sent has come back. */
 let awaitSeq = Infinity;
 let awaitQueueSeq = Infinity;
@@ -410,6 +417,7 @@ function reconcile(): void {
   const party = partyNow();
   if (!party.code) return;
   if (publishing || performance.now() < quietUntil) return;
+  if (performance.now() < floodUntil) return;
   const state = party.playback;
   const track = state.track;
   if (!track) {
@@ -427,7 +435,10 @@ function reconcile(): void {
     return;
   }
   const current = player.current();
-  if (!current || knownVideo(current) !== track.videoId) return load(party);
+  if (!current || knownVideo(current) !== track.videoId) {
+    if (tooFast(party)) return;
+    return load(party);
+  }
   followQueue(party);
   if (locallyPaused) {
     awaiting = false;
@@ -452,7 +463,7 @@ function reconcile(): void {
     clearTimeout(startTimer);
     if (wait > 0) {
       // Woken for the scheduled instant, not the next tick: late is what this avoids.
-      startTimer = setTimeout(reconcile, wait);
+      startTimer = setTimeout(reconcile, Math.min(wait, MAX_START_WAIT_MS));
       return;
     }
     // A resume is where it was paused; a seek here would only cost a re-buffer.
@@ -468,7 +479,7 @@ function reconcile(): void {
   const lead = msUntilStart(state, serverNow());
   if (lead > 0) {
     clearTimeout(startTimer);
-    startTimer = setTimeout(reconcile, lead);
+    startTimer = setTimeout(reconcile, Math.min(lead, MAX_START_WAIT_MS));
     return;
   }
   // Only a settled player can be measured.
@@ -482,6 +493,30 @@ function reconcile(): void {
   // ahead to account for the embed's variable seek latency.
   const lag = partyPlayer.isStream() ? STREAM_SEEK_LAG_MS : 0;
   partyPlayer.seekTo((want + lag) / 1000);
+}
+
+/**
+ * Whether songs are changing too fast to follow. Each new song someone else
+ * picked counts once; past the limit, following stops for a moment and says
+ * so, and then picks up wherever the party is.
+ */
+function tooFast(party: PartyState): boolean {
+  const { track, startedBy } = party.playback;
+  if (!track || track.videoId === countedSong) return false;
+  countedSong = track.videoId;
+  if (startedBy === party.you?.memberId) return false;
+  const next = songFlood(songChanges, performance.now());
+  songChanges = next.changes;
+  if (!next.flooded) return false;
+  songChanges = [];
+  floodUntil = performance.now() + SONG_FLOOD_PAUSE_MS;
+  countedSong = null;
+  clearTimeout(startTimer);
+  startTimer = setTimeout(reconcile, SONG_FLOOD_PAUSE_MS + 50);
+  toast(
+    'Songs are changing too fast, so wavebit stopped following for a moment. The host can remove whoever is doing it.',
+  );
+  return true;
 }
 
 /** Puts the party's songs in the player, at the party's place. */

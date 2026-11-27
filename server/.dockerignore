@@ -1,0 +1,3 @@
+deploy
+*.md
+**/*_test.go

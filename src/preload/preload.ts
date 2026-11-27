@@ -140,10 +140,12 @@ const api: WavebitApi = {
     join: (text) => invoke(Channels.partyJoin, { text }),
     leave: () => invoke(Channels.partyLeave),
     control: (control) => invoke(Channels.partyControl, control),
-    acceptInvite: () => invoke(Channels.partyAcceptInvite),
+    acceptInvite: (code, host) =>
+      invoke(Channels.partyAcceptInvite, { code, host }),
     declineInvite: () => invoke(Channels.partyDeclineInvite),
     probe: () => invoke(Channels.partyProbe),
     resync: () => invoke(Channels.partyResync),
+    react: (reaction) => invoke(Channels.partyReact, { reaction }),
   },
   discord: {
     status: () => invoke(Channels.discordStatus),

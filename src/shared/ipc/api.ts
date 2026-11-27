@@ -73,6 +73,8 @@ import type {
   PartyControl,
   PartyMe,
   PartyProbe,
+  PartyReaction,
+  PartyReactionId,
   PartyState,
 } from '../schemas/party';
 import type { DiscordPlayback, DiscordState } from '../schemas/discord';
@@ -109,6 +111,8 @@ export interface EventPayloads {
   [Events.partyChanged]: PartyState;
   /** An invite link was opened: show the Listen together drawer. */
   [Events.partyOpen]: null;
+  /** Someone in the party reacted; checked in the Rust module first. */
+  [Events.partyReaction]: PartyReaction;
   [Events.discordStatus]: DiscordState;
 }
 
@@ -308,13 +312,15 @@ export interface WavebitApi {
     join(text: string): Promise<void>;
     leave(): Promise<void>;
     control(control: PartyControl): Promise<void>;
-    /** Says yes to the invite that is waiting. */
-    acceptInvite(): Promise<void>;
+    /** Says yes to the invite that is waiting, the one with this code and host. */
+    acceptInvite(code: string, host: string): Promise<void>;
     declineInvite(): Promise<void>;
     /** Asks the party server in Settings whether it answers. */
     probe(): Promise<PartyProbe>;
     /** Measures the clock again and asks the server where the party is. */
     resync(): Promise<void>;
+    /** Sends a reaction to everyone in the party, when its server passes them on. */
+    react(reaction: PartyReactionId): Promise<void>;
   };
   discord: {
     status(): Promise<DiscordState>;

@@ -1,0 +1,48 @@
+[Unit]
+Description=wavebit relay for Host on this device
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=wavebit-party
+Group=wavebit-party
+ExecStart=/opt/wavebit-party/wavebit-relay
+WorkingDirectory=/var/lib/wavebit-relay
+StateDirectory=wavebit-relay
+StateDirectoryMode=0700
+Environment=WAVEBIT_RELAY_KEY_FILE=/var/lib/wavebit-relay/relay.key
+# Listens on 4001 (tcp and quic). Its DNS name must not go through a proxy
+# such as Cloudflare's: peers connect to it directly.
+Restart=always
+RestartSec=2
+MemoryMax=300M
+TasksMax=512
+LimitNOFILE=16384
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

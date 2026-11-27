@@ -1,0 +1,129 @@
+name: Server
+
+# wavebit's Listen together server (server/): the party server, the relay and
+# the helper the app ships for Host on this device. Runs on every pull request
+# to main, beside CI.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: server
+
+jobs:
+  check:
+    name: Server checks and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Formatting
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: Modules are tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - run: go vet ./...
+      - name: Tests, with the race detector
+        run: go test -race -count=1 ./...
+      - name: Known vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  build:
+    name: Builds for every app platform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Cross-compile the server, relay and helper
+        run: |
+          set -euo pipefail
+          for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/amd64 darwin/arm64; do
+            os=${target%/*} arch=${target#*/}
+            for cmd in wavebit-party wavebit-relay wavebit-p2p; do
+              GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -o "/tmp/out/$os-$arch/$cmd" "./cmd/$cmd"
+            done
+            echo "built $target"
+          done
+      - name: The helper starts, and refuses bad settings
+        run: |
+          out=$(echo '{}' | /tmp/out/linux-amd64/wavebit-p2p || true)
+          echo "$out"
+          [ "$out" = '{"code":"bad_settings","event":"error"}' ]
+      - name: Docker image
+        run: docker build -t wavebit-party:ci .
+
+  stress:
+    name: Stress test with bad actors
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Build
+        run: |
+          go build -o /tmp/wavebit-party ./cmd/wavebit-party
+          go build -o /tmp/wavebit-stress ./cmd/wavebit-stress
+      - name: 500 devices for 30 seconds, with a flooder, a ghost and a code guesser
+        run: |
+          # Every client here is one address, so its own limits are raised;
+          # the guessing limit stays as shipped.
+          JAM_LISTEN_ADDR=127.0.0.1:8099 JAM_CREATE_RATE_PER_MINUTE=1000000 \
+            JAM_MAX_PARTIES_PER_CLIENT=0 JAM_LOOKUP_RATE_PER_MINUTE=1000000 \
+            JAM_MAX_PARTIES=1000 JAM_MAX_MEMBERS=10 /tmp/wavebit-party &
+          for i in $(seq 1 50); do curl -sf http://127.0.0.1:8099/healthz >/dev/null && break; sleep 0.2; done
+          /tmp/wavebit-stress -server http://127.0.0.1:8099 -parties 100 -members 5 \
+            -duration 30s -strict -max-p99 1s
+
+  direct:
+    name: Direct connections through NAT
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Build
+        run: |
+          mkdir -p /tmp/nat
+          CGO_ENABLED=0 go build -o /tmp/nat/wavebit-p2p ./cmd/wavebit-p2p
+          CGO_ENABLED=0 go build -o /tmp/nat/wavebit-relay ./cmd/wavebit-relay
+      - name: Ordinary home routers connect directly
+        run: sudo env EXPECT=direct unshare -nm bash p2p/nat-test.sh /tmp/nat cone
+      - name: Strict routers fall back to the relay
+        run: |
+          sudo rm -f /tmp/nat/host.* /tmp/nat/guest.* /tmp/nat/relay.*
+          sudo env EXPECT=relayed unshare -nm bash p2p/nat-test.sh /tmp/nat symmetric

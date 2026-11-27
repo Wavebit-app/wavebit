@@ -1,0 +1,57 @@
+[Unit]
+Description=wavebit Listen together server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=wavebit-party
+Group=wavebit-party
+ExecStart=/opt/wavebit-party/wavebit-party
+Restart=always
+RestartSec=2
+# DOMAIN-specific values (JAM_PUBLIC_ORIGIN) are written here by setup.sh.
+EnvironmentFile=-/etc/wavebit-party.env
+
+# Caddy terminates TLS on 443 and passes the resolved client in X-Real-IP.
+# The server itself only listens on loopback.
+Environment=JAM_LISTEN_ADDR=127.0.0.1:8000
+Environment=JAM_CLIENT_IP_HEADER=X-Real-IP
+Environment=JAM_TRUSTED_PROXIES=127.0.0.1/32,::1/128
+Environment=JAM_MAX_MEMBERS=5
+Environment=JAM_MAX_PARTIES=200
+Environment=JAM_CREATE_RATE_PER_MINUTE=2
+Environment=JAM_CONNECTION_IDLE_MS=900000
+
+# A runaway party server is killed and restarted alone instead of taking the VM.
+MemoryMax=400M
+TasksMax=512
+LimitNOFILE=16384
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

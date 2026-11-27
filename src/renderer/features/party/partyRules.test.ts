@@ -11,6 +11,8 @@ import {
   bannerIndex,
   faultMessage,
   inviteLink,
+  noticeBudget,
+  songFlood,
   linkStatus,
   msUntilStart,
   newDrift,
@@ -196,9 +198,10 @@ test('ping levels, links and messages', () => {
     faultMessage({ code: 'no_such_party', message: 'x' }),
     'No party with that code.',
   );
+  // A server's own words could say anything; they never reach the screen.
   assert.equal(
-    faultMessage({ code: 'new_thing', message: 'The server said so.' }),
-    'The server said so.',
+    faultMessage({ code: 'new_thing', message: 'Rejoin at evil.example' }),
+    'The party server refused that.',
   );
 });
 
@@ -235,4 +238,33 @@ test('everyone in a party gets the same banner', () => {
   assert.ok([0, 1, 2].includes(bannerIndex('K7M2QX', 3)));
   assert.notEqual(bannerIndex('AAAAAA', 3), bannerIndex('AAAAAB', 3));
   assert.equal(bannerIndex('K7M2QX', 0), 0);
+});
+
+test('join and leave notices are limited, the rest summed up', () => {
+  const first = noticeBudget([], 0, ['A joined', 'B joined']);
+  assert.deepEqual(first.show, ['A joined', 'B joined']);
+  assert.equal(first.summary, null);
+  const flood = noticeBudget(first.recent, 1_000, [
+    'C joined',
+    'C left',
+    'C joined',
+  ]);
+  assert.deepEqual(flood.show, ['C joined']);
+  assert.equal(flood.summary, '2 more changes in who’s listening');
+  // Ten seconds on, there is room again.
+  assert.deepEqual(noticeBudget(flood.recent, 11_000, ['D joined']).show, [
+    'D joined',
+  ]);
+});
+
+test('six song changes from others in ten seconds is a flood', () => {
+  let changes: number[] = [];
+  let flooded = false;
+  for (let i = 0; i < 6; i++) {
+    ({ changes, flooded } = songFlood(changes, i * 1_000));
+    if (i < 5) assert.equal(flooded, false, `change ${i + 1}`);
+  }
+  assert.equal(flooded, true);
+  // Spread out, they're just a party.
+  assert.equal(songFlood([0, 3_000, 6_000], 12_000).flooded, false);
 });
