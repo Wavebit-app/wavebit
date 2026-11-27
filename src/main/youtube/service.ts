@@ -6,6 +6,7 @@ import type { RadioSong } from './parse';
 import type {
   YtAccount,
   YtArtist,
+  YtCanvasQuery,
   YtExplore,
   YtMatch,
   YtMatchQuery,
@@ -17,6 +18,11 @@ import type {
 } from '../../shared/schemas/youtube';
 import { AppError } from '../../shared/errors';
 import { createHash } from 'node:crypto';
+import {
+  parseCounterpart,
+  pickCanvasVideo,
+  type CanvasVideo,
+} from './canvasRules';
 import { lib } from '../library/library';
 import { native } from '../services/native';
 import { emit } from '../ipc/handle';
@@ -377,6 +383,46 @@ export async function video(videoId: string): Promise<RadioSong | null> {
       }),
     ).find((s) => s.videoId === videoId) ?? null;
   if (found) store(k, found, RADIO_TTL_S);
+  return found;
+}
+
+/**
+ * The music video for a song, for the YouTube Canvas: its id, and how far
+ * into it the song begins when that is known. YouTube Music's own pairing
+ * (its Song/Video switch) comes first; it is only sent to signed-in
+ * accounts. Otherwise its Videos search for the title and artist, taking a
+ * video only when its title holds the song's and it is credited to the same
+ * artist, so a cover or a reaction is never shown. Null when there is none.
+ * Cached like the radio, misses included.
+ */
+export async function canvas(
+  song: YtCanvasQuery,
+): Promise<{ videoId: string; offsetMs: number | null } | null> {
+  const k = await key(`canvas-video:${song.videoId}`);
+  const hit = cached<{
+    found: { videoId: string; offsetMs: number | null } | null;
+  }>(k);
+  if (hit) return hit.found;
+  const paired = parseCounterpart(
+    await innertube('next', {
+      videoId: song.videoId,
+      playlistId: `RDAMVM${song.videoId}`,
+      isAudioOnly: true,
+      enablePersistentPlaylistPanel: true,
+    }).catch(() => null),
+    song.videoId,
+  );
+  let found: CanvasVideo | null = paired;
+  if (!found && song.artist) {
+    const shelves = await search(`${song.title} ${song.artist}`).catch(
+      () => [] as YtShelf[],
+    );
+    found = pickCanvasVideo(
+      shelves.flatMap((shelf) => shelf.items),
+      song,
+    );
+  }
+  store(k, { found }, RADIO_TTL_S);
   return found;
 }
 

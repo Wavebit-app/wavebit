@@ -62,6 +62,7 @@ import type {
   YtStatus,
   YtResolvedStream,
   YtStreamResolve,
+  YtCanvasQuery,
 } from '../schemas/youtube';
 import type {
   NotesTarget,
@@ -248,6 +249,10 @@ export interface WavebitApi {
     radio(videoId: string): Promise<YtRadioSong[]>;
     /** One song or video by id, for a pasted link; null when YouTube Music doesn't list it. */
     video(videoId: string): Promise<YtRadioSong | null>;
+    /** The music video paired with a song (YouTube Canvas), and where the song starts in it. */
+    canvas(
+      song: YtCanvasQuery,
+    ): Promise<{ videoId: string; offsetMs: number | null } | null>;
     /** YouTube Music's search, as shelves. */
     search(query: string): Promise<YtShelf[]>;
     /** Signing in through the default browser (Google's desktop-app OAuth). */

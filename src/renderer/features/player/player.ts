@@ -729,6 +729,16 @@ function autoVideoHeight(): number {
   return connection?.saveData || connection?.type === 'cellular' ? 480 : 1080;
 }
 let directVideo = EMPTY_DIRECT_VIDEO;
+/**
+ * Videos whose direct stream failed this session: Play goes straight to
+ * YouTube's player for them instead of failing the same way again.
+ */
+const directFailed = new Set<string>();
+/**
+ * A video YouTube's player refused (embedding turned off, or a player
+ * error): its next load tries the direct stream, once, before it is skipped.
+ */
+let directFirst: string | null = null;
 let selectedVideoHeight: number | null = null;
 const directListeners = new Set<() => void>();
 function setDirectVideo(next: DirectVideoState): void {
@@ -912,8 +922,11 @@ async function loadStream(
     return;
   }
 
-  const isVideo = track.stream?.isVideo === true && id === track.stream.videoId;
-  if (isVideo) {
+  const forced = directFirst === id;
+  directFirst = null;
+  const isVideo =
+    (track.stream?.isVideo === true && id === track.stream.videoId) || forced;
+  if (isVideo && (forced || !directFailed.has(id))) {
     const requestId = crypto.randomUUID();
     directRequestId = requestId;
     setDirectVideo({
@@ -943,8 +956,16 @@ async function loadStream(
       prefetchNext();
       return;
     } catch {
+      directFailed.add(id);
       if (token !== streamToken) return;
       if (directRequestId === requestId) directRequestId = null;
+      // YouTube's player already refused this one: nothing is left to try.
+      if (forced) {
+        setDirectVideo(EMPTY_DIRECT_VIDEO);
+        set({ error: true, playing: false, loading: false });
+        skipSoon(token);
+        return;
+      }
       void window.wavebit.youtube
         .releaseStream(requestId, null)
         .catch(() => {});
@@ -990,7 +1011,7 @@ function startDirectStream(
     if (Number.isFinite(at) && at > 0 && Number.isFinite(deck.el.duration))
       deck.el.currentTime = Math.min(at, Math.max(0, deck.el.duration - 0.1));
     if (playAfterResolve && deck.el.paused)
-      void deck.el.play().catch(() => void fallbackDirectStream());
+      void deck.el.play().catch(() => void fallbackDirectStream(true));
     else if (!playAfterResolve) deck.el.pause();
   };
   deck.el.addEventListener('loadedmetadata', start, { once: true });
@@ -1016,12 +1037,21 @@ function startDirectStream(
   });
 }
 
-async function fallbackDirectStream(): Promise<void> {
+/**
+ * Hands a direct stream that failed to YouTube's player, at the same place.
+ * `play` says whether it should play there: it should whenever the listener
+ * asked for the song to play, including while it was still loading, or the
+ * song would sit cued and Play would only try the failed stream again.
+ */
+async function fallbackDirectStream(
+  play = state.playing || state.loading,
+): Promise<void> {
   if (!streaming || embedStream) return;
   const token = streamToken;
   const track = player.current();
   const videoId = track?.stream?.videoId;
   if (!track || !videoId) return;
+  directFailed.add(videoId);
   const position = Number.isFinite(A().el.currentTime)
     ? A().el.currentTime
     : state.position;
@@ -1032,12 +1062,13 @@ async function fallbackDirectStream(): Promise<void> {
   if (token !== streamToken) return;
   embedStream = true;
   youtubeEmbed.setVolume(state.volume);
-  youtubeEmbed.load(videoId, Math.max(0, position), state.playing, true);
+  youtubeEmbed.load(videoId, Math.max(0, position), play, true);
   loadedId = track.id;
+  progressAt = performance.now();
   set({
     position: Math.max(0, position),
-    loading: true,
-    playing: false,
+    loading: play,
+    playing: play,
     error: false,
   });
 }
@@ -1361,8 +1392,24 @@ youtubeEmbed.on({
       youtubeEmbed.play();
     } else advance();
   },
-  error: () => {
+  error: (code) => {
     if (!streaming || !embedStream) return;
+    const track = player.current();
+    const id = youtubeEmbed.current() ?? track?.stream?.videoId ?? null;
+    // Embedding turned off (101, 150), a player or setup error (5, 153):
+    // the video itself exists, so wavebit fetches it directly instead, once.
+    // A bad or removed video (2, 100) is passed over.
+    if (
+      track &&
+      id &&
+      ![2, 100].includes(code) &&
+      !directFailed.has(id) &&
+      !isDown()
+    ) {
+      directFirst = id;
+      void loadStream(track, true, state.position, true);
+      return;
+    }
     set({ error: true, playing: false, loading: false });
     skipSoon(streamToken);
   },

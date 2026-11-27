@@ -21,8 +21,8 @@ import { Lyrics } from '../lyrics/Lyrics';
 import { PartyButton } from '../party/PartyBits';
 import { IconButton, SeekBar, Transport, Volume } from './controls';
 import { SpotifyCanvas } from './Canvas';
+import { CanvasOrVideo } from './YouTubeCanvas';
 import { usePlayer, useStreaming } from './player';
-import { VideoSlot } from './VideoSlot';
 import { VideoQualityMenu } from './NowPlayingPanel';
 import { useVideoStage } from './videoStage';
 
@@ -184,7 +184,10 @@ export function FullPlayer() {
             <span className="w-11" />
           </header>
           {streaming ? (
-            <VideoSlot className="mt-4 aspect-video w-full shrink-0 rounded-md" />
+            <CanvasOrVideo
+              track={track}
+              className="mt-4 aspect-video w-full shrink-0 rounded-md"
+            />
           ) : (
             !lyrics && (
               <Artwork
@@ -234,7 +237,10 @@ export function FullPlayer() {
         <div className="relative grid h-full grid-cols-[min(400px,34vw)_minmax(0,38vw)] grid-rows-[minmax(0,1fr)] justify-center gap-x-[clamp(48px,7vw,144px)] px-[clamp(24px,9vw,144px)]">
           <div className="flex min-h-0 flex-col justify-center overflow-y-auto py-12">
             {streaming ? (
-              <VideoSlot className="aspect-video w-full rounded-md" />
+              <CanvasOrVideo
+                track={track}
+                className="aspect-video w-full rounded-md"
+              />
             ) : (
               <Artwork
                 src={track.artwork}
@@ -254,7 +260,7 @@ export function FullPlayer() {
         </div>
       ) : streaming && theater ? (
         <div className="relative flex h-full flex-col">
-          <VideoSlot className="min-h-0 flex-1" />
+          <CanvasOrVideo track={track} className="min-h-0 flex-1" />
           <div className="flex shrink-0 items-center gap-8 bg-surface px-10 py-5">
             <div className="flex min-w-0 flex-[0_1_320px] flex-col">
               <span className="truncate text-lg font-semibold">
@@ -302,7 +308,10 @@ export function FullPlayer() {
       ) : (
         <div className="relative flex h-full flex-wrap items-center justify-center gap-16 overflow-y-auto p-12">
           {streaming ? (
-            <VideoSlot className="aspect-video w-[min(640px,48vw)] rounded-md" />
+            <CanvasOrVideo
+              track={track}
+              className="aspect-video w-[min(640px,48vw)] rounded-md"
+            />
           ) : (
             <Artwork
               src={track.artwork}

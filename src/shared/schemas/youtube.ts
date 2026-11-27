@@ -226,6 +226,16 @@ export const YtSearchSchema = z
   .object({ query: z.string().trim().min(1).max(200) })
   .strict();
 
+/** A song to find a YouTube Canvas for: its id, and its title and artist for the search. */
+export const YtCanvasSchema = z
+  .object({
+    videoId: z.string().regex(/^[A-Za-z0-9_-]{11}$/),
+    title: z.string().trim().min(1).max(200),
+    artist: z.string().trim().max(200),
+  })
+  .strict();
+export type YtCanvasQuery = z.infer<typeof YtCanvasSchema>;
+
 /** AutoPlay's seed: one video id. */
 export const YtRadioSchema = z
   .object({ videoId: z.string().regex(/^[A-Za-z0-9_-]{11}$/) })

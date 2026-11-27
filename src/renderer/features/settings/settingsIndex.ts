@@ -124,6 +124,12 @@ export const SETTINGS: SettingEntry[] = [
       'animated cover video loop',
     ],
     [
+      'youtubeCanvas',
+      'YouTube Canvas',
+      'A YouTube song’s music video, muted and in time with the song, behind the Now playing drawer and the full-screen player.',
+      'music video animated background loop youtube',
+    ],
+    [
       'hideVolumeBar',
       'Hide volume bar',
       'Removes the volume slider from the player bar.',
